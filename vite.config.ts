@@ -90,6 +90,29 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      // Crawlers that do not run scripts only see this: brand, policy links and contact details.
+      // React replaces it as soon as the app mounts.
+      name: "static-home-fallback",
+      transformIndexHtml(html: string) {
+        let cfg: Record<string, string> = {};
+        try {
+          cfg = JSON.parse(fs.readFileSync(path.resolve("site.config.json"), "utf8"));
+        } catch {
+          /* fall back to defaults below */
+        }
+        const esc = (v: unknown) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const email = esc(cfg.supportEmail ?? "support@wordlamp.net");
+        const block =
+          `<main id="static-home" style="max-width:640px;margin:48px auto;padding:0 20px;line-height:1.7">` +
+          `<h1>词灯 WordLamp</h1>` +
+          `<p>Illustrated IELTS vocabulary with spaced-repetition practice and AI writing feedback. 一词一画的雅思词汇学习，含 AI 写作批改。</p>` +
+          `<p><a href="/pricing.html">Pricing</a> · <a href="/terms.html">Terms of Service</a> · <a href="/privacy.html">Privacy Policy</a> · <a href="/refund.html">Refund Policy</a></p>` +
+          `<p>Contact: <a href="mailto:${email}">${email}</a>${cfg.legalName ? ` · Operated by ${esc(cfg.legalName)}` : ""}</p>` +
+          `</main>`;
+        return html.replace('<div id="root"></div>', `<div id="root">${block}</div>`);
+      },
+    },
+    {
       name: "private-local-library",
       configureServer(server) {
         server.middlewares.use(localMedia);
