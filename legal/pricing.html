@@ -32,9 +32,9 @@
 {{#if proAvailable}}{{else}}<p id="wl-notice">Pro is not available for purchase yet. To be notified when it launches, email <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>.</p>{{/if}}
 <p id="wl-msg" class="fine" role="status" hidden></p>
 <div id="wl-key" class="keybox" hidden>
-<strong>Your license key</strong>
+<strong>🎉 Payment received — your Pro license key · 付款成功，这是你的 Pro 许可证密钥</strong>
 <code id="wl-keytext"></code>
-<button type="button" id="wl-copy">Copy key</button>
+<button type="button" id="wl-copy">Copy key</button> <a class="buy go" href="/#/write">Open AI Writing · 去使用 AI 写作 →</a>
 <p class="fine">Save this key somewhere safe. This browser is already activated. To use Pro on another device, open <a href="/#/write">WordLamp → Writing</a> and paste the key under "Have a license key?". Cancellations and refunds: see the <a href="/refund.html">Refund Policy</a>.</p>
 </div>
 </div>
@@ -76,6 +76,7 @@
     $("wl-key").hidden = false;
     $("wl-buy").hidden = true;
     msg("");
+    try { $("wl-key").scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
   }
   function claim(txn, attempt) {
     try { localStorage.setItem("wordlamp:pending-txn", txn); } catch (e) {}
@@ -104,7 +105,11 @@
     Paddle.Initialize({
       token: CFG.token,
       eventCallback: function (e) {
-        if (e && e.name === "checkout.completed" && e.data && e.data.transaction_id) claim(e.data.transaction_id, 0);
+        if (e && e.name === "checkout.completed" && e.data && e.data.transaction_id) {
+          claim(e.data.transaction_id, 0);
+          // Let the buyer read Paddle's confirmation for a moment, then hand over to our own success panel.
+          setTimeout(function () { try { Paddle.Checkout.close(); } catch (err) {} }, 1500);
+        }
       }
     });
     Array.prototype.forEach.call(document.querySelectorAll("button.buy"), function (b) {
