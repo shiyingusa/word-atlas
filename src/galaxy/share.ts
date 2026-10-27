@@ -47,7 +47,7 @@ export async function shareGalaxy(source: HTMLCanvasElement, lit: number, total:
     g.fillText(tag, W - pad - g.measureText(tag).width, H - 28);
     const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/png"));
     if (!blob) throw new Error("no blob");
-    const file = new File([blob], "word-atlas-galaxy.png", { type: "image/png" });
+    const file = new File([blob], "wordlamp-galaxy.png", { type: "image/png" });
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file] }).catch(() => null);
       return;

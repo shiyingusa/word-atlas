@@ -63,7 +63,16 @@
   var msg = function (t) { $("wl-msg").textContent = t; $("wl-msg").hidden = !t; };
 
   function showKey(key) {
-    $("wl-keytext").textContent = key;
+    // Only allow line breaks after a hyphen so a group of characters is never split in the middle.
+    var el = $("wl-keytext");
+    el.textContent = "";
+    key.split("-").forEach(function (part, i, all) {
+      var span = document.createElement("span");
+      span.style.whiteSpace = "nowrap";
+      span.textContent = part + (i < all.length - 1 ? "-" : "");
+      el.appendChild(span);
+      if (i < all.length - 1) el.appendChild(document.createElement("wbr"));
+    });
     $("wl-key").hidden = false;
     $("wl-buy").hidden = true;
     msg("");

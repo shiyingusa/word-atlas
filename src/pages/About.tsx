@@ -4,6 +4,8 @@ import { REPO_URL, UPSTREAM_URL } from "../config";
 
 const BASE = import.meta.env.BASE_URL;
 
+const hasRecordings = !!(import.meta.env.VITE_AUDIO_BASE as string | undefined);
+
 export function About() {
   const atlas = useAtlas();
   return (
@@ -90,7 +92,7 @@ export function About() {
         <section className="panel">
           <h3 className="eyebrow">内容从哪里来</h3>
           <p className="muted">
-            释义、例句、搭配和提示由大语言模型按统一的词典规范重新撰写；插画由图像模型按统一画风逐词绘制；发音和朗读由 ElevenLabs 合成（英音 Alice，美音 Sarah）。所有内容都经过结构和一致性的自动校验，但没有逐条人工审校。看到错的地方，欢迎在 GitHub 提 Issue，或者直接改数据提 PR。
+            释义、例句、搭配和提示由大语言模型按统一的词典规范重新撰写；插画由图像模型按统一画风逐词绘制；{hasRecordings ? "发音和朗读由 ElevenLabs 合成（英音 Alice，美音 Sarah）。" : "目前发音使用你设备自带的语音朗读，不同设备的音色会有差别；原项目附带的合成录音我们会在之后接入。"}所有内容都经过结构和一致性的自动校验，但没有逐条人工审校。看到错的地方，欢迎在 GitHub 提 Issue，或者直接改数据提 PR。
           </p>
           <p className="muted">词灯不是官方雅思词表，与雅思（IELTS）考试主办方无关，也不承诺提分。它只想把背单词这件事，做得好看一点、扎实一点。</p>
         </section>

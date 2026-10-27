@@ -78,7 +78,7 @@ function targets(w: number, h: number, count: number) {
   const en = Math.max(18, zh * 0.24);
   g.font = `700 ${en}px "Fraunces Variable", Georgia, serif`;
   g.letterSpacing = `${en * 0.34}px`;
-  g.fillText("WORD ATLAS", cx, cy + R + zh * 1.52);
+  g.fillText("WORDLAMP", cx, cy + R + zh * 1.52);
   const data = g.getImageData(0, 0, w, h).data;
   // Take every lit pixel, then a random subset: no visible sampling grid.
   const all: [number, number][] = [];
@@ -245,7 +245,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
       {reduce && (
         <div className="splash-static">
           <b>词灯</b>
-          <small>WORD ATLAS</small>
+          <small>WORDLAMP</small>
         </div>
       )}
       <div className="splash-copy">

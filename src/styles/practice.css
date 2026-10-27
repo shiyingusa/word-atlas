@@ -1,2 +1,4 @@
 .practice .mode-cards { grid-template-columns: repeat(2, 1fr); }
 .typing-peek { display: block; margin: 10px auto 0; }
+/* The invisible input covers the whole stage to catch typing; buttons must stay above it. */
+.typing-stage button { position: relative; z-index: 2; cursor: pointer; }

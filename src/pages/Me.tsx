@@ -38,7 +38,7 @@ export function Me({ privateAvailable }: { privateAvailable: boolean }) {
     const blob = new Blob([exportBackup()], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `word-atlas-backup-${dayKey()}.json`;
+    a.download = `wordlamp-backup-${dayKey()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
