@@ -12,9 +12,9 @@
   "proMonthly": "6.99",
   "proYearly": "49",
   "refundDays": 30,
-  "paddleEnv": "sandbox",
-  "paddleToken": "test_61339b4797f6e4ea34b2cc0ba41",
-  "priceMonthlyId": "pri_01m5ys4nnfmk3g7zyj5cag7gt7",
-  "priceYearlyId": "pri_01m5ys57dw9zsf59aj3md3vjq6",
+  "paddleEnv": "production",
+  "paddleToken": "live_30431ee82a9c5af2877e98a1848",
+  "priceMonthlyId": "pri_01m5ymm5bhk2pd75fmaryhn09q",
+  "priceYearlyId": "pri_01m5ympdcjcz7ds1xscdb8fmds",
   "proAvailable": false
 }
