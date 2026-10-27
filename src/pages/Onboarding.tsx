@@ -37,6 +37,7 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
+            <p className="muted">分数只是大致参考，不是官方换算。</p>
           </fieldset>
           <fieldset>
             <legend>每天点亮几颗新星？</legend>

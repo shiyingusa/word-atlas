@@ -1,0 +1,2 @@
+.practice .mode-cards { grid-template-columns: repeat(2, 1fr); }
+.typing-peek { display: block; margin: 10px auto 0; }

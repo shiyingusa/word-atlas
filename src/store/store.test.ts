@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sanitizeProgress, sanitizeSettings } from "./store";
+import { dropUntouchedSession, isUntouchedSession, sanitizeProgress, sanitizeSettings, settingsResetPlan } from "./store";
+import type { ActiveSession, Settings } from "./store";
 
 const card = { due: 1, s: 2, d: 5, el: 0, sd: 1, ls: 0, reps: 1, lapses: 0, st: 2, seen: 1 };
 
@@ -28,4 +29,33 @@ test("rejects other versions and unknown settings", () => {
   assert.equal(s.dailyNew, 10);
   assert.equal(s.theme, "dark");
   assert.equal(s.retention, 0.9);
+});
+
+const session = (over: Partial<ActiveSession> = {}): ActiveSession => ({ id: "s1", started: 1, steps: [], index: 0, graded: {}, newIds: [], reviewIds: [], ...over });
+
+test("a session nobody has answered in is untouched; progress makes it permanent", () => {
+  assert.equal(isUntouchedSession(null), false);
+  assert.equal(isUntouchedSession(session()), true);
+  assert.equal(isUntouchedSession(session({ index: 2 })), false);
+  assert.equal(isUntouchedSession(session({ graded: { a: 3 } })), false);
+  assert.equal(isUntouchedSession(session({ pending: { correct: true, value: "x" } })), false);
+  assert.equal(isUntouchedSession(session({ finished: 5 })), false);
+});
+
+test("changing level or daily goal drops only an untouched session", () => {
+  const base = sanitizeProgress({ version: 2, cards: {} }, "x");
+  assert.equal(dropUntouchedSession({ ...base, session: session() }).session, null);
+  const started = { ...base, session: session({ graded: { a: 3 } }) };
+  assert.equal(dropUntouchedSession(started), started);
+
+  const prev = sanitizeSettings({}) as Settings;
+  assert.equal(settingsResetPlan(prev, { startLevel: prev.startLevel }), false);
+  assert.equal(settingsResetPlan(prev, { theme: "dark" }), false);
+  assert.equal(settingsResetPlan(prev, { startLevel: prev.startLevel + 2 }), true);
+  assert.equal(settingsResetPlan(prev, { dailyNew: prev.dailyNew + 5 }), true);
+});
+
+test("typing stats accept the new recall mode", () => {
+  const p = sanitizeProgress({ version: 2, cards: {}, typing: [{ at: 1, mode: "recall", items: 10, wpm: 30, accuracy: 95 }] }, "x");
+  assert.equal(p.typing.length, 1);
 });

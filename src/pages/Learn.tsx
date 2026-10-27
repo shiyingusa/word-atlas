@@ -9,7 +9,7 @@ import { go } from "../lib/router";
 import { gap, normalize } from "../lib/text";
 import { answer, advance, buildSession, gradeFor, sessionStats } from "../store/session";
 import { Rating } from "../store/srs";
-import { store, useStore, type ActiveSession, type QuizKind, type Step } from "../store/store";
+import { store, useStore, type ActiveSession, type QuizKind, type Step, isUntouchedSession } from "../store/store";
 import { EntryView, Highlight } from "../ui/EntryView";
 import { Illustration } from "../ui/Illustration";
 import { Galaxy } from "../galaxy/Galaxy";
@@ -22,10 +22,13 @@ export function Learn() {
   const atlas = useAtlas();
   const session = useStore((s) => s.progress.session);
   const [ready, setReady] = useState(false);
+  const onboarded = useStore((s) => s.settings.onboarded);
 
   useEffect(() => {
+    // Wait for the first-run setup: the plan must be built from the level the learner picks.
+    if (!onboarded) return;
     const { progress, settings } = store.get();
-    if (!progress.session) {
+    if (!progress.session || isUntouchedSession(progress.session)) {
       const s = buildSession(atlas, progress, settings);
       if (!s.steps.length) {
         go({ page: "today" }, null, true);
@@ -33,7 +36,7 @@ export function Learn() {
       }
       store.progress((p) => ({ ...p, session: s }));
     }
-  }, [atlas]);
+  }, [atlas, onboarded]);
 
   const ids = useMemo(() => [...new Set(session?.steps.map((s) => s.id) ?? [])], [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {

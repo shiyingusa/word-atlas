@@ -1,4 +1,4 @@
-import { Headphones, Keyboard, RotateCcw, Type } from "lucide-react";
+import { Brain, Headphones, Keyboard, RotateCcw, Type } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { prefetch, useAtlas } from "../atlas/context";
 import type { Entry } from "../atlas/types";
@@ -9,12 +9,14 @@ import { clean, correctCharacterCount, same, typingDelta, typingMetrics } from "
 import { store, useStore } from "../store/store";
 import { AmbiencePicker } from "../ui/Ambience";
 import { Illustration } from "../ui/Illustration";
+import "../styles/practice.css";
 
-type Mode = "word" | "sentence" | "dictation";
+type Mode = "word" | "recall" | "sentence" | "dictation";
 type Source = "recent" | "mistakes" | "saved" | "path";
 
 const MODES: [Mode, string, string, typeof Type][] = [
-  ["word", "单词", "看图写出单词", Type],
+  ["word", "跟打", "看图，照着字母打出单词", Type],
+  ["recall", "回忆", "看图和释义，凭记忆拼写", Brain],
   ["sentence", "例句", "照着抄写，练出手感", Keyboard],
   ["dictation", "听写", "只听声音，写下整句", Headphones],
 ];
@@ -44,7 +46,7 @@ export function Practice() {
 
   const start = async () => {
     const ids = shuffle(pool.slice(0, 60), hashSeed(String(Date.now()))).slice(0, 10);
-    const entries = (await prefetch(atlas, ids)).filter((e): e is Entry => !!e && (mode === "word" || e.ex.length > 0));
+    const entries = (await prefetch(atlas, ids)).filter((e): e is Entry => !!e && (mode === "word" || mode === "recall" || e.ex.length > 0));
     if (entries.length) setRound({ entries, key: Date.now() });
   };
 
@@ -123,10 +125,13 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
   const started = useRef<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const e = entries[i];
-  const target = mode === "word" ? e.w : e.ex[0].en;
+  const target = mode === "word" || mode === "recall" ? e.w : e.ex[0].en;
+  const hidden = mode === "dictation" || mode === "recall";
+  const [peek, setPeek] = useState(false);
 
   useEffect(() => {
     setValue("");
+    setPeek(false);
     started.current = null;
     input.current?.focus();
     if (mode === "dictation") void play(atlas.audio(e, "ex"), e.ex[0].en, settings.accent);
@@ -201,7 +206,7 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
         </span>
       </header>
       <section className="typing-stage" onClick={() => input.current?.focus()}>
-        {mode === "word" && (
+        {(mode === "word" || mode === "recall") && (
           <div className="typing-cue">
             <Illustration src={atlas.img(e)} word={e.w} topic={0} eager />
             <p>
@@ -209,7 +214,7 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
             </p>
           </div>
         )}
-        {mode !== "word" && (
+        {mode !== "word" && mode !== "recall" && (
           <p className="typing-zh">
             {mode === "dictation" && (
               <button className="link" onClick={() => play(atlas.audio(e, "ex"), e.ex[0].en, settings.accent)}>
@@ -219,11 +224,11 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
             {e.ex[0].zh}
           </p>
         )}
-        <p className={`typing-text ${mode === "word" ? "is-word" : ""} ${mode === "dictation" ? "is-hidden" : ""}`} lang="en" aria-hidden="true">
+        <p className={`typing-text ${mode === "word" || mode === "recall" ? "is-word" : ""} ${hidden ? "is-hidden" : ""}`} lang="en" aria-hidden="true">
           {chars.map((ch, k) => {
             const t = typed[k];
             const cls = t === undefined ? (k === typed.length ? "is-caret" : "") : same(t, ch) ? "is-ok" : "is-bad";
-            const show = mode === "dictation" && t === undefined ? (ch === " " ? " " : /[A-Za-z]/.test(ch) ? "·" : ch) : ch;
+            const show = hidden && !peek && t === undefined ? (ch === " " ? " " : /[A-Za-z]/.test(ch) ? "·" : ch) : ch;
             return (
               <span key={k} className={cls}>
                 {show}
@@ -231,6 +236,11 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
             );
           })}
         </p>
+        {mode === "recall" && (
+          <button className="link typing-peek" onClick={() => setPeek(true)} disabled={peek}>
+            看提示
+          </button>
+        )}
         <input
           ref={input}
           className="typing-input"
@@ -244,7 +254,7 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
           aria-label="在这里输入"
         />
         <p className="muted typing-help">
-          {mode === "dictation" ? "听不清可以点「再听一遍」。" : "直接开始输入，全部正确后自动进入下一项。"} 第 {i + 1}/{entries.length} 项
+          {mode === "dictation" ? "听不清可以点「再听一遍」。" : mode === "recall" ? "凭记忆拼写，想不起来可以点「看提示」。" : "直接开始输入，全部正确后自动进入下一项。"} 第 {i + 1}/{entries.length} 项
         </p>
       </section>
     </div>

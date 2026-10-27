@@ -28,7 +28,7 @@ export interface DayStat {
 
 export interface TypingRound {
   at: number;
-  mode: "word" | "sentence" | "dictation";
+  mode: "word" | "recall" | "sentence" | "dictation";
   items: number;
   wpm: number;
   accuracy: number;
@@ -148,7 +148,7 @@ export function sanitizeProgress(v: unknown, datasetId: string): Progress {
     out.typing = v.typing
       .filter(
         (t): t is TypingRound =>
-          isObj(t) && num(t.at, 0) && ["word", "sentence", "dictation"].includes(t.mode as string) && num(t.items, 0) && num(t.wpm, 0, 400) && num(t.accuracy, 0, 100),
+          isObj(t) && num(t.at, 0) && ["word", "recall", "sentence", "dictation"].includes(t.mode as string) && num(t.items, 0) && num(t.wpm, 0, 400) && num(t.accuracy, 0, 100),
       )
       .slice(-500);
   const s = v.session;
@@ -254,7 +254,10 @@ export const store = {
     scheduleSave();
   },
   settings(patch: Partial<Settings>) {
-    state = { ...state, settings: { ...state.settings, ...patch } };
+    const prev = state.settings;
+    // A session nobody has answered yet was built from the old settings; rebuild it.
+    const progress = settingsResetPlan(prev, patch) ? dropUntouchedSession(state.progress) : state.progress;
+    state = { ...state, progress, settings: { ...prev, ...patch } };
     emit();
     scheduleSave();
   },
@@ -262,6 +265,20 @@ export const store = {
 
 export function useStore<T>(select: (s: State) => T): T {
   return useSyncExternalStore(store.subscribe, () => select(state), () => select(state));
+}
+
+/** True when the learner has not answered anything in this session yet. */
+export function isUntouchedSession(s: ActiveSession | null | undefined): boolean {
+  return !!s && s.index === 0 && Object.keys(s.graded).length === 0 && !s.pending && !s.finished;
+}
+
+export function dropUntouchedSession(p: Progress): Progress {
+  return isUntouchedSession(p.session) ? { ...p, session: null } : p;
+}
+
+/** Changing the starting level or the daily goal invalidates a plan that was already built. */
+export function settingsResetPlan(prev: Settings, patch: Partial<Settings>): boolean {
+  return (patch.startLevel !== undefined && patch.startLevel !== prev.startLevel) || (patch.dailyNew !== undefined && patch.dailyNew !== prev.dailyNew);
 }
 
 export function bumpDay(p: Progress, patch: Partial<DayStat>): Progress {
