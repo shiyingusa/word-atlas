@@ -13,8 +13,8 @@
   "proYearly": "49",
   "refundDays": 30,
   "paddleEnv": "sandbox",
-  "paddleToken": "",
-  "priceMonthlyId": "",
-  "priceYearlyId": "",
+  "paddleToken": "test_61339b4797f6e4ea34b2cc0ba41",
+  "priceMonthlyId": "pri_01m5ys4nnfmk3g7zyj5cag7gt7",
+  "priceYearlyId": "pri_01m5ys57dw9zsf59aj3md3vjq6",
   "proAvailable": false
 }
