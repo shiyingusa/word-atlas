@@ -1,6 +1,6 @@
-import { Loader2, PenLine, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import { CRITERIA, FREE_DAILY, MAX_WORDS, MIN_WORDS, countWords } from "../../functions/_lib/core";
+import { Loader2, PenLine, ShieldCheck, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CRITERIA, FREE_DAILY, MAX_WORDS, MIN_WORDS, PRO_DAILY, countWords } from "../../functions/_lib/core";
 import type { CriterionKey, Grade } from "../../functions/_lib/core";
 import "../styles/write.css";
 
@@ -11,7 +11,49 @@ const NAMES: Record<CriterionKey, [string, string]> = {
   GRA: ["语法范围与准确", "Grammatical Range & Accuracy"],
 };
 
-type Result = { grade: Grade; words: number; remaining: number; limit: number };
+type Result = { grade: Grade; words: number; remaining: number; limit: number; plan: "free" | "pro" };
+type GradeReply = { grade: Grade; words: number; remaining: number; limit: number; plan: "free" | "pro"; license?: "active" | "inactive" | "unknown" };
+type StatusReply = { key: string; active: boolean; status: string; renewsAt: string | null };
+type ClaimReply = { key: string; active: boolean; renewsAt: string | null };
+type Api<T> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
+type Plan = { active: boolean; renewsAt: string | null };
+
+const LS_KEY = "wordlamp:license";
+const LS_PENDING = "wordlamp:pending-txn";
+const ls = {
+  get(k: string) {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set(k: string, v: string) {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* storage can be blocked */
+    }
+  },
+  del(k: string) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* storage can be blocked */
+    }
+  },
+};
+
+async function postJson<T>(url: string, body: unknown): Promise<Api<T>> {
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = (await res.json().catch(() => null)) as Api<T> | null;
+    return data ?? { ok: false, error: "服务暂时没有响应，请稍后再试。" };
+  } catch {
+    return { ok: false, error: "网络出了点问题，请检查网络后再试。" };
+  }
+}
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 
 export function Write() {
   const [question, setQuestion] = useState("");
@@ -20,6 +62,60 @@ export function Write() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [license, setLicense] = useState<string | null>(() => ls.get(LS_KEY));
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [licInput, setLicInput] = useState("");
+  const [licBusy, setLicBusy] = useState(false);
+  const [licMsg, setLicMsg] = useState<string | null>(null);
+  const isPro = !!(license && plan?.active);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      // Paid but the key never arrived (closed tab, bad connection)? Retry the claim quietly.
+      const pending = ls.get(LS_PENDING);
+      if (!license && pending) {
+        const r = await postJson<ClaimReply>("/api/license/claim", { transactionId: pending });
+        if (live && r.ok) {
+          ls.set(LS_KEY, r.key);
+          ls.del(LS_PENDING);
+          setLicense(r.key);
+          setPlan({ active: r.active, renewsAt: r.renewsAt });
+        }
+        return;
+      }
+      if (license) {
+        const r = await postJson<StatusReply>("/api/license/status", { key: license });
+        if (!live) return;
+        if (r.ok) setPlan({ active: r.active, renewsAt: r.renewsAt });
+        else if (r.code === "invalid") setLicMsg("本机保存的许可证不正确或已失效，目前按免费版使用。");
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function activate() {
+    setLicBusy(true);
+    setLicMsg(null);
+    const r = await postJson<StatusReply>("/api/license/status", { key: licInput });
+    setLicBusy(false);
+    if (!r.ok) return setLicMsg(r.error);
+    if (!r.active) return setLicMsg("这个许可证对应的订阅已经结束或暂停。续订后即可继续使用。");
+    ls.set(LS_KEY, r.key);
+    setLicense(r.key);
+    setPlan({ active: true, renewsAt: r.renewsAt });
+    setLicInput("");
+    setLicMsg("已激活 Pro，感谢支持！");
+  }
+
+  function leavePro() {
+    ls.del(LS_KEY);
+    setLicense(null);
+    setPlan(null);
+    setLicMsg("已在这台设备上退出 Pro。订阅本身不受影响，随时可以用密钥重新激活。");
+  }
 
   const words = countWords(essay);
   const lengthOk = words >= MIN_WORDS && words <= MAX_WORDS;
@@ -31,15 +127,19 @@ export function Write() {
       const res = await fetch("/api/grade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ essay, question, consent }),
+        body: JSON.stringify({ essay, question, consent, license: license ?? undefined }),
       });
       const data = (await res.json().catch(() => null)) as
-        | { ok: true; grade: Grade; words: number; remaining: number; limit: number }
+        | ({ ok: true } & GradeReply)
         | { ok: false; error: string }
         | null;
       if (!data) throw new Error("服务暂时没有响应，请稍后再试。");
       if (!data.ok) throw new Error(data.error);
-      setResult({ grade: data.grade, words: data.words, remaining: data.remaining, limit: data.limit });
+      if (data.license === "inactive") {
+        setPlan({ active: false, renewsAt: null });
+        setLicMsg("你的 Pro 订阅已经结束或暂停，这次按免费额度批改。续订后可继续使用。");
+      }
+      setResult({ grade: data.grade, words: data.words, remaining: data.remaining, limit: data.limit, plan: data.plan });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "出了点问题，请稍后再试。");
@@ -47,6 +147,45 @@ export function Write() {
       setBusy(false);
     }
   }
+
+  const renderPlan = () => (
+    <section className="panel wr-plan">
+      {isPro ? (
+        <>
+          <p>
+            <Sparkles size={15} /> <b>Pro 已激活</b>
+            {plan?.renewsAt ? ` · 本期至 ${fmtDate(plan.renewsAt)}` : ""} · 每天 {PRO_DAILY} 次批改{" "}
+            <button className="link" onClick={leavePro}>
+              在本机退出
+            </button>
+          </p>
+          <p className="muted">
+            取消订阅或申请退款，请看<a href="/refund.html" target="_blank" rel="noreferrer">退款政策</a>，或发邮件到 support@wordlamp.net。
+          </p>
+        </>
+      ) : (
+        <>
+          <p>
+            免费版：每天 {FREE_DAILY} 次。想要每天 {PRO_DAILY} 次？ <a href="/pricing.html" target="_blank" rel="noreferrer">了解 Pro</a>
+          </p>
+          <details>
+            <summary>已有许可证密钥？</summary>
+            <div className="wr-lic">
+              <input value={licInput} onChange={(e) => setLicInput(e.target.value)} placeholder="WL-XXXXX-XXXXX-XXXXX-XXXXX" aria-label="许可证密钥" autoCapitalize="characters" spellCheck={false} />
+              <button className="btn btn-primary" disabled={licBusy || licInput.trim().length < 10} onClick={activate}>
+                {licBusy ? "检查中…" : "激活"}
+              </button>
+            </div>
+          </details>
+        </>
+      )}
+      {licMsg && (
+        <p className="muted" role="status">
+          {licMsg}
+        </p>
+      )}
+    </section>
+  );
 
   if (result) {
     const g = result.grade;
@@ -108,7 +247,7 @@ export function Write() {
             再批改一篇
           </button>
           <span className="muted">
-            今天还剩 {result.remaining}/{result.limit} 次免费批改
+            今天还剩 {result.remaining}/{result.limit} 次{result.plan === "pro" ? "" : "免费"}批改
           </span>
         </div>
       </div>
@@ -119,7 +258,9 @@ export function Write() {
     <div className="page wr">
       <p className="eyebrow">AI 写作批改</p>
       <h1 className="display">写完就批，马上知道哪里能更好。</h1>
-      <p className="lede">粘贴一篇雅思大作文（Task 2），按任务回应、连贯衔接、词汇、语法四个维度给出估算分、逐句修改和练习建议。每天 {FREE_DAILY} 次免费。</p>
+      <p className="lede">粘贴一篇雅思大作文（Task 2），按任务回应、连贯衔接、词汇、语法四个维度给出估算分、逐句修改和练习建议。每天 {FREE_DAILY} 次免费，Pro 每天 {PRO_DAILY} 次。</p>
+
+      {renderPlan()}
 
       <label className="wr-label" htmlFor="wr-q">
         作文题目（可选）

@@ -11,5 +11,10 @@
   "proDaily": 15,
   "proMonthly": "6.99",
   "proYearly": "49",
-  "refundDays": 30
+  "refundDays": 30,
+  "paddleEnv": "sandbox",
+  "paddleToken": "",
+  "priceMonthlyId": "",
+  "priceYearlyId": "",
+  "proAvailable": false
 }

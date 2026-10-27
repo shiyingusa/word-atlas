@@ -7,6 +7,9 @@ const cfg = JSON.parse(fs.readFileSync(path.join(root, "site.config.json"), "utf
 const layout = fs.readFileSync(path.join(root, "legal", "_layout.html"), "utf8");
 
 const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// {{#if key}}...{{else}}...{{/if}} — shown when cfg[key] is true or "true". Not nestable.
+const cond = (s) =>
+  s.replace(/\{\{#if (\w+)\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{\/if\}\}/g, (_m, k, a, b = "") => (cfg[k] === true || cfg[k] === "true" ? a : b));
 const fill = (s) =>
   s.replace(/\{\{(\w+)\}\}/g, (m, k) => {
     if (!(k in cfg)) throw new Error(`Unknown placeholder ${m} in legal templates`);
@@ -19,7 +22,7 @@ for (const file of fs.readdirSync(path.join(root, "legal"))) {
   const raw = fs.readFileSync(path.join(root, "legal", file), "utf8");
   const title = (raw.match(/<!--title:\s*(.*?)\s*-->/) ?? [, file])[1];
   const body = raw.replace(/<!--title:.*?-->\s*/, "");
-  const html = fill(layout.replace("{{__title}}", title).replace("{{__body}}", body));
+  const html = fill(cond(layout.replace("{{__title}}", title).replace("{{__body}}", body)));
   fs.writeFileSync(path.join(root, "public", file), html);
   rendered++;
 }

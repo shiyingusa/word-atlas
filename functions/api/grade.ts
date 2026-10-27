@@ -3,8 +3,9 @@
  * Secrets: DEEPSEEK_API_KEY (encrypted env var). Binding: QUOTA (KV namespace).
  * The essay is forwarded to the model provider and is never stored or logged here.
  */
-import { FREE_DAILY, GLOBAL_DAILY_DEFAULT, MODEL, buildMessages, dayKey, parseGrade, readQuota, recordQuota, validateRequest } from "../_lib/core";
+import { FREE_DAILY, GLOBAL_DAILY_DEFAULT, MODEL, PRO_DAILY, buildMessages, dayKey, parseGrade, readQuota, recordQuota, validateRequest } from "../_lib/core";
 import type { KVLike } from "../_lib/core";
+import { lookupLicense, normalizeKey, sha256Hex } from "../_lib/license";
 
 interface Env {
   DEEPSEEK_API_KEY?: string;
@@ -19,11 +20,6 @@ const json = (body: unknown, status = 200) =>
     headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
   });
 const fail = (status: number, error: string, code: string) => json({ ok: false, error, code }, status);
-
-async function sha256Hex(s: string) {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
-}
 
 class UpstreamError extends Error {
   constructor(public status: number) {
@@ -71,14 +67,23 @@ export const onRequest = async (context: { request: Request; env: Env }) => {
   if (!v.ok) return fail(400, v.error, v.code);
 
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const user = await sha256Hex(`${ip}|${env.IP_SALT ?? "wordlamp"}`);
+  const salt = env.IP_SALT ?? "wordlamp";
   const day = dayKey();
-  const globalLimit = Number.parseInt(env.GLOBAL_DAILY_LIMIT ?? "", 10) || GLOBAL_DAILY_DEFAULT;
-  const quota = await readQuota(env.QUOTA, user, day, FREE_DAILY, globalLimit);
+
+  // A valid, active license key means Pro: its own daily allowance, not shared with the free pool.
+  const licenseKey = normalizeKey((body as { license?: unknown }).license);
+  const lic = licenseKey ? await lookupLicense(env.QUOTA, licenseKey) : null;
+  const pro = !!lic?.active;
+  const licenseState = licenseKey ? (pro ? "active" : lic ? "inactive" : "unknown") : undefined;
+  const limit = pro ? PRO_DAILY : FREE_DAILY;
+  const user = pro ? await sha256Hex(`lic|${licenseKey}|${salt}`) : await sha256Hex(`${ip}|${salt}`);
+  const globalLimit = pro ? Number.POSITIVE_INFINITY : Number.parseInt(env.GLOBAL_DAILY_LIMIT ?? "", 10) || GLOBAL_DAILY_DEFAULT;
+
+  const quota = await readQuota(env.QUOTA, user, day, limit, globalLimit);
   if (!quota.allowed) {
     return quota.reason === "global"
-      ? fail(429, "今天的批改名额已被用完，请明天再来。", "global_limit")
-      : fail(429, `今天的 ${FREE_DAILY} 次免费批改已用完，明天再来吧。`, "daily_limit");
+      ? fail(429, "今天的免费批改名额已被用完，请明天再来。", "global_limit")
+      : fail(429, pro ? `今天的 ${PRO_DAILY} 次 Pro 批改已用完，明天再来吧。` : `今天的 ${FREE_DAILY} 次免费批改已用完，明天再来吧。`, "daily_limit");
   }
 
   const messages = buildMessages(v.value, v.words);
@@ -93,6 +98,6 @@ export const onRequest = async (context: { request: Request; env: Env }) => {
   }
   if (!grade) return fail(502, "AI 这次没有给出有效结果，请再试一次。这次不会扣你的次数。", "bad_output");
 
-  const used = await recordQuota(env.QUOTA, user, day);
-  return json({ ok: true, grade, words: v.words, remaining: Math.max(0, FREE_DAILY - used), limit: FREE_DAILY });
+  const used = await recordQuota(env.QUOTA, user, day, !pro);
+  return json({ ok: true, grade, words: v.words, remaining: Math.max(0, limit - used), limit, plan: pro ? "pro" : "free", license: licenseState });
 };

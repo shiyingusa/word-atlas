@@ -4,6 +4,7 @@
  */
 export const MODEL = "deepseek-chat";
 export const FREE_DAILY = 2;
+export const PRO_DAILY = 15;
 export const GLOBAL_DAILY_DEFAULT = 300;
 export const MIN_WORDS = 80;
 export const MAX_WORDS = 500;
@@ -165,11 +166,12 @@ export async function readQuota(kv: KVLike, user: string, day: string, userLimit
   return { allowed: true, used };
 }
 
-export async function recordQuota(kv: KVLike, user: string, day: string): Promise<number> {
+export async function recordQuota(kv: KVLike, user: string, day: string, countGlobal = true): Promise<number> {
   const [u, g] = await Promise.all([kv.get(`u:${day}:${user}`), kv.get(`g:${day}`)]);
   const used = (Number.parseInt(u ?? "0", 10) || 0) + 1;
-  const total = (Number.parseInt(g ?? "0", 10) || 0) + 1;
   const ttl = { expirationTtl: 172800 };
-  await Promise.all([kv.put(`u:${day}:${user}`, String(used), ttl), kv.put(`g:${day}`, String(total), ttl)]);
+  const writes = [kv.put(`u:${day}:${user}`, String(used), ttl)];
+  if (countGlobal) writes.push(kv.put(`g:${day}`, String((Number.parseInt(g ?? "0", 10) || 0) + 1), ttl));
+  await Promise.all(writes);
   return used;
 }

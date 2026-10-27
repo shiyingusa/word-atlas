@@ -1,0 +1,133 @@
+import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
+import { afterEach, test } from "node:test";
+import type { KVLike } from "../../functions/_lib/core";
+import { onRequest as claim } from "../../functions/api/license/claim";
+import { onRequest as status } from "../../functions/api/license/status";
+import { onRequest as grade } from "../../functions/api/grade";
+import { onRequest as webhook } from "../../functions/api/paddle/webhook";
+
+const realFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+function fakeKV(): KVLike & { data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return { data, get: async (k) => data.get(k) ?? null, put: async (k, v) => void data.set(k, v) };
+}
+const TXN = "txn_01abcdefghijklmnopqrstuvwx";
+const SUB = "sub_01abcdefghijklmnopqrstuvwx";
+const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+const modelOut = { criteria: { TR: { score: 6, comment: "好" }, CC: { score: 6, comment: "好" }, LR: { score: 6, comment: "好" }, GRA: { score: 6, comment: "好" } }, strengths: ["a"], fixes: [{ original: "x y", better: "x z", why: "因为" }], next_steps: ["b"] };
+
+type Paddle = { txnStatus?: string; subId?: string | null; subStatus?: string; fail?: number };
+function mockNetwork(p: Paddle = {}) {
+  const calls: string[] = [];
+  globalThis.fetch = (async (url: string | URL) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.startsWith("https://api.deepseek.com")) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelOut) } }] }), { status: 200 });
+    if (p.fail) return new Response("no", { status: p.fail });
+    if (u.includes("/transactions/")) return new Response(JSON.stringify({ data: { id: TXN, status: p.txnStatus ?? "completed", subscription_id: p.subId === undefined ? SUB : p.subId, customer_id: "ctm_01abc" } }), { status: 200 });
+    if (u.includes("/subscriptions/")) return new Response(JSON.stringify({ data: { id: SUB, status: p.subStatus ?? "active", current_billing_period: { ends_at: "2026-11-27T10:00:00Z" } } }), { status: 200 });
+    if (u.includes("/customers/")) return new Response(JSON.stringify({ data: { email: "buyer@example.com" } }), { status: 200 });
+    return new Response("?", { status: 404 });
+  }) as typeof fetch;
+  return calls;
+}
+const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+  new Request(`https://wordlamp.net${path}`, { method: "POST", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "1.2.3.4", ...headers }, body: JSON.stringify(body) });
+const run = async (fn: (c: { request: Request; env: never }) => Promise<Response>, req: Request, env: unknown) => {
+  const res = await fn({ request: req, env: env as never });
+  return { status: res.status, body: (await res.json()) as Record<string, any> };
+};
+
+test("claim: pays, confirms with Paddle, issues a key that unlocks Pro", async () => {
+  const kv = fakeKV();
+  const calls = mockNetwork();
+  const env = { PADDLE_API_KEY: "pdl_key", PADDLE_ENV: "sandbox", QUOTA: kv, DEEPSEEK_API_KEY: "sk" };
+
+  let r = await run(claim, post("/api/license/claim", { transactionId: TXN }), env);
+  assert.equal(r.status, 200);
+  assert.match(r.body.key, /^WL-/);
+  assert.equal(r.body.active, true);
+  assert.ok(calls.every((u) => u.startsWith("https://sandbox-api.paddle.com") || u.startsWith("https://api.deepseek.com")), "sandbox uses the sandbox API");
+  const key = r.body.key as string;
+  assert.ok(![...kv.data.values()].some((v) => v.includes("1.2.3.4")), "no raw IP stored");
+
+  // same browser retries: same key
+  r = await run(claim, post("/api/license/claim", { transactionId: TXN }), env);
+  assert.equal(r.body.key, key);
+
+  // status endpoint
+  r = await run(status, post("/api/license/status", { key: key.toLowerCase() }), env);
+  assert.deepEqual([r.status, r.body.active, r.body.key], [200, true, key]);
+  r = await run(status, post("/api/license/status", { key: "WL-AAAAA-AAAAA-AAAAA-AAAAA" }), env);
+  assert.equal(r.status, 404);
+
+  // grading: pro limit of 15, free users still limited to 2
+  const essay = { essay: words(150), consent: true };
+  for (let i = 1; i <= 15; i++) {
+    r = await run(grade, post("/api/grade", { ...essay, license: key }), env);
+    assert.equal(r.status, 200, `pro call ${i}`);
+    assert.equal(r.body.plan, "pro");
+    assert.equal(r.body.remaining, 15 - i);
+  }
+  r = await run(grade, post("/api/grade", { ...essay, license: key }), env);
+  assert.deepEqual([r.status, r.body.code], [429, "daily_limit"]);
+
+  r = await run(grade, post("/api/grade", essay, { "CF-Connecting-IP": "9.9.9.9" }), env);
+  assert.deepEqual([r.status, r.body.plan, r.body.limit], [200, "free", 2]);
+  r = await run(grade, post("/api/grade", { ...essay, license: "WL-AAAAA-AAAAA-AAAAA-AAAAA" }, { "CF-Connecting-IP": "8.8.8.8" }), env);
+  assert.deepEqual([r.status, r.body.plan, r.body.license], [200, "free", "unknown"]);
+});
+
+test("claim: unpaid, malformed, foreign-origin and upstream-failure cases", async () => {
+  const kv = fakeKV();
+  const env = { PADDLE_API_KEY: "pdl_key", PADDLE_ENV: "production", QUOTA: kv };
+  mockNetwork({ txnStatus: "draft" });
+  let r = await run(claim, post("/api/license/claim", { transactionId: TXN }), env);
+  assert.deepEqual([r.status, r.body.code], [409, "pending"]);
+  mockNetwork({ subId: null });
+  r = await run(claim, post("/api/license/claim", { transactionId: TXN }), env);
+  assert.deepEqual([r.status, r.body.code], [409, "pending"]);
+  r = await run(claim, post("/api/license/claim", { transactionId: "../../etc" }), env);
+  assert.equal(r.status, 400);
+  r = await run(claim, post("/api/license/claim", { transactionId: TXN }, { Origin: "https://evil.example" }), env);
+  assert.equal(r.status, 403);
+  r = await run(claim, post("/api/license/claim", { transactionId: TXN }), { QUOTA: kv });
+  assert.equal(r.status, 503);
+  mockNetwork({ fail: 500 });
+  r = await run(claim, post("/api/license/claim", { transactionId: TXN }), env);
+  assert.deepEqual([r.status, r.body.code], [502, "upstream"]);
+  assert.equal([...kv.data.keys()].filter((k) => k.startsWith("lic:")).length, 0, "no key is issued when Paddle cannot confirm");
+});
+
+test("webhook: rejects bad signatures, applies cancellations, deactivates the key", async () => {
+  const kv = fakeKV();
+  mockNetwork();
+  const env = { PADDLE_API_KEY: "pdl_key", PADDLE_ENV: "sandbox", PADDLE_WEBHOOK_SECRET: "pdl_ntfset_secret", QUOTA: kv, DEEPSEEK_API_KEY: "sk" };
+  const key = (await run(claim, post("/api/license/claim", { transactionId: TXN }), env)).body.key as string;
+
+  const send = (event: object, secret = "pdl_ntfset_secret", ts = Math.floor(Date.now() / 1000)) => {
+    const raw = JSON.stringify(event);
+    const sig = createHmac("sha256", secret).update(`${ts}:${raw}`).digest("hex");
+    return run(webhook, new Request("https://wordlamp.net/api/paddle/webhook", { method: "POST", headers: { "Paddle-Signature": `ts=${ts};h1=${sig}` }, body: raw }), env);
+  };
+  const cancel = { event_type: "subscription.canceled", occurred_at: new Date(Date.now() + 60_000).toISOString(), data: { id: SUB, status: "canceled", customer_id: "ctm_01abc", current_billing_period: null, scheduled_change: null } };
+
+  assert.equal((await send(cancel, "wrong_secret")).status, 401);
+  assert.equal((await run(status, post("/api/license/status", { key }), env)).body.active, true, "forged webhook changed nothing");
+  assert.equal((await send(cancel, "pdl_ntfset_secret", Math.floor(Date.now() / 1000) - 3600)).status, 401, "stale timestamp");
+
+  assert.equal((await send(cancel)).status, 200);
+  assert.equal((await run(status, post("/api/license/status", { key }), env)).body.active, false);
+  const essay = { essay: words(150), consent: true };
+  const r = await run(grade, post("/api/grade", { ...essay, license: key }), env);
+  assert.deepEqual([r.status, r.body.plan, r.body.license], [200, "free", "inactive"], "a cancelled key falls back to the free allowance");
+
+  assert.equal((await send({ event_type: "transaction.completed", data: { id: TXN } })).status, 200, "unrelated events are acknowledged");
+  const noSecret = await run(webhook, new Request("https://wordlamp.net/api/paddle/webhook", { method: "POST", body: "{}" }), { QUOTA: kv });
+  assert.equal(noSecret.status, 503);
+});

@@ -15,14 +15,28 @@
 <p><a href="/">Start learning</a></p>
 </div>
 <div class="plan">
-<h2>Pro <span class="tag">Coming soon</span></h2>
+<h2>Pro {{#if proAvailable}}<span class="tag">Available now</span>{{else}}<span class="tag" id="wl-soon">Coming soon</span>{{/if}}</h2>
 <p class="price">${{proMonthly}}<span style="font-size:16px;font-weight:400"> / month</span></p>
 <p>or ${{proYearly}} / year</p>
 <ul>
 <li>Up to {{proDaily}} AI writing feedbacks per day (fair use)</li>
 <li>Cancel any time; access continues until the end of the paid period</li>
+<li>You receive a license key that unlocks Pro on your devices</li>
 </ul>
-<p>Pro is not available for purchase yet. To be notified when it launches, email <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>.</p>
+<div id="wl-buy" {{#if proAvailable}}{{else}}hidden{{/if}}>
+<p class="testmode" id="wl-test" hidden>TEST MODE — no real charges. Use Paddle's test card.</p>
+<button class="buy" type="button" data-plan="monthly">Subscribe monthly · ${{proMonthly}}</button>
+<button class="buy" type="button" data-plan="yearly">Subscribe yearly · ${{proYearly}}</button>
+<p class="fine">By subscribing you agree to the <a href="/terms.html">Terms of Service</a> and <a href="/refund.html">Refund Policy</a>. Our order process is conducted by our online reseller Paddle.com, the Merchant of Record. Subscriptions renew automatically until cancelled.</p>
+</div>
+{{#if proAvailable}}{{else}}<p id="wl-notice">Pro is not available for purchase yet. To be notified when it launches, email <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>.</p>{{/if}}
+<p id="wl-msg" class="fine" role="status" hidden></p>
+<div id="wl-key" class="keybox" hidden>
+<strong>Your license key</strong>
+<code id="wl-keytext"></code>
+<button type="button" id="wl-copy">Copy key</button>
+<p class="fine">Save this key somewhere safe. This browser is already activated. To use Pro on another device, open <a href="/#/write">WordLamp → Writing</a> and paste the key under "Have a license key?". Cancellations and refunds: see the <a href="/refund.html">Refund Policy</a>.</p>
+</div>
 </div>
 </div>
 <p>Prices may change; any change is shown here before you buy. See our <a href="/refund.html">refund policy</a>. {{brand}} is not an official IELTS product and does not guarantee any test result.</p>
@@ -32,7 +46,73 @@
 <p>价格以美元计，适用的税费由我们的支付服务商在结算时计算。</p>
 <h2>免费版：$0</h2>
 <p>7,298 个带插画的雅思词条、间隔复习与练习、每天 {{freeDaily}} 次 AI 写作批改（雅思大作文），学习进度保存在你自己的浏览器里。</p>
-<h2>Pro：即将推出</h2>
-<p>${{proMonthly}}/月，或 ${{proYearly}}/年；每天最多 {{proDaily}} 次 AI 写作批改（合理使用）。可随时取消，已付费周期内仍可使用。Pro 暂未开放购买，开放时如需通知，请发邮件至 <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>。</p>
+<h2>Pro：{{#if proAvailable}}现已开放{{else}}即将推出{{/if}}</h2>
+<p>${{proMonthly}}/月，或 ${{proYearly}}/年；每天最多 {{proDaily}} 次 AI 写作批改（合理使用）。可随时取消，已付费周期内仍可使用。付款后你会得到一个许可证密钥，用它在你的设备上解锁 Pro。{{#if proAvailable}}{{else}}Pro 暂未开放购买，开放时如需通知，请发邮件至 <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>。{{/if}}</p>
 <p>词灯不是官方雅思产品，不保证任何考试成绩。</p>
 </article>
+<script>
+(function () {
+  var CFG = { env: "{{paddleEnv}}", token: "{{paddleToken}}", monthly: "{{priceMonthlyId}}", yearly: "{{priceYearlyId}}" };
+  var test = CFG.env === "sandbox";
+  // Test mode is only visible to people who add #test to the address, so visitors never see it.
+  if (!(CFG.token && CFG.monthly && CFG.yearly && (!test || location.hash === "#test"))) return;
+  var $ = function (id) { return document.getElementById(id); };
+  $("wl-buy").hidden = false;
+  if (test) $("wl-test").hidden = false;
+  ["wl-notice", "wl-soon"].forEach(function (id) { if ($(id)) $(id).hidden = true; });
+  var msg = function (t) { $("wl-msg").textContent = t; $("wl-msg").hidden = !t; };
+
+  function showKey(key) {
+    $("wl-keytext").textContent = key;
+    $("wl-key").hidden = false;
+    $("wl-buy").hidden = true;
+    msg("");
+  }
+  function claim(txn, attempt) {
+    try { localStorage.setItem("wordlamp:pending-txn", txn); } catch (e) {}
+    msg("Payment received. Activating your license…");
+    fetch("/api/license/claim", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transactionId: txn }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.ok) {
+          try { localStorage.setItem("wordlamp:license", d.key); localStorage.removeItem("wordlamp:pending-txn"); } catch (e) {}
+          showKey(d.key);
+        } else if (d && d.code === "pending" && attempt < 8) {
+          setTimeout(function () { claim(txn, attempt + 1); }, 2500);
+        } else {
+          msg((d && d.error) || "Your payment went through but activation failed. Please do not pay again — email {{supportEmail}} with your receipt.");
+        }
+      })
+      .catch(function () {
+        msg("Your payment went through but activation failed. Please do not pay again — reload this page in a minute to retry, or email {{supportEmail}} with your receipt.");
+      });
+  }
+
+  var s = document.createElement("script");
+  s.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
+  s.onload = function () {
+    if (test) Paddle.Environment.set("sandbox");
+    Paddle.Initialize({
+      token: CFG.token,
+      eventCallback: function (e) {
+        if (e && e.name === "checkout.completed" && e.data && e.data.transaction_id) claim(e.data.transaction_id, 0);
+      }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("button.buy"), function (b) {
+      b.addEventListener("click", function () {
+        Paddle.Checkout.open({ items: [{ priceId: b.getAttribute("data-plan") === "yearly" ? CFG.yearly : CFG.monthly, quantity: 1 }] });
+      });
+    });
+    var pending = null;
+    try { pending = localStorage.getItem("wordlamp:pending-txn"); } catch (e) {}
+    if (pending) claim(pending, 0);
+  };
+  s.onerror = function () { msg("Could not load the payment form. Please check your connection and reload."); };
+  document.head.appendChild(s);
+
+  $("wl-copy").addEventListener("click", function () {
+    var t = $("wl-keytext").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { $("wl-copy").textContent = "Copied"; }, function () { $("wl-copy").textContent = "Select and copy manually"; });
+  });
+})();
+</script>
