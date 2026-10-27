@@ -1,0 +1,27 @@
+.badges { margin-bottom: 14px; }
+.badges-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.badges-head b { font-family: var(--serif); font-size: 22px; }
+.badges-next { margin: 8px 0 14px; color: var(--ink-2); font-size: 14px; }
+.badges-next i { font-style: normal; color: var(--ochre); font-weight: 600; }
+.badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+.badge { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 3px; background: var(--card); align-content: start; }
+.badge .bi { font-size: 26px; line-height: 1; }
+.badge b { font-size: 14px; }
+.badge small { color: var(--ink-3); font-size: 12px; line-height: 1.4; }
+.badge.is-locked { opacity: 0.55; }
+.badge.is-locked .bi { filter: grayscale(1); }
+.badge.is-earned { border-color: var(--ochre); }
+.badge .bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.badge .bar i { display: block; height: 100%; background: var(--ochre); }
+.reminder { margin-bottom: 14px; }
+.reminder-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.reminder-row input[type="time"] { padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--card); color: var(--ink); font: inherit; }
+.trend { padding: 14px 18px; margin: 6px 0 4px; }
+.trend p { margin: 4px 0; }
+.trend svg { width: 100%; height: 70px; display: block; margin-top: 6px; }
+.trend polyline { fill: none; stroke: var(--ochre); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.trend circle { fill: var(--ochre); }
+.trend circle.last { fill: var(--terra); }
+.wr-delta { margin: 6px 0 0; font-weight: 600; }
+.wr-delta.is-up { color: var(--sage-ink); }
+.wr-delta.is-down { color: var(--ink-2); }

@@ -401,7 +401,7 @@ export class GalaxyEngine {
       const c = this.cam as unknown as Record<string, number>;
       let done = true;
       for (const k of Object.keys(g)) {
-        c[k] += (g[k] - c[k]) * Math.min(1, dt * 3.2);
+        c[k] += (g[k] - c[k]) * Math.min(1, dt * 4.6);
         if (Math.abs(g[k] - c[k]) > 1e-3) done = false;
       }
       if (done) this.goal = null;

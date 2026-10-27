@@ -5,10 +5,12 @@
  */
 import { FREE_DAILY, GLOBAL_DAILY_DEFAULT, MODEL, PRO_DAILY, buildMessages, dayKey, parseGrade, readQuota, recordQuota, validateRequest } from "../_lib/core";
 import type { KVLike } from "../_lib/core";
-import { lookupLicense, normalizeKey, sha256Hex } from "../_lib/license";
+import { lookupLicenseFresh, makeFetchSub, normalizeKey, sha256Hex } from "../_lib/license";
 
 interface Env {
   DEEPSEEK_API_KEY?: string;
+  PADDLE_API_KEY?: string;
+  PADDLE_ENV?: string;
   QUOTA?: KVLike;
   GLOBAL_DAILY_LIMIT?: string;
   IP_SALT?: string;
@@ -72,7 +74,7 @@ export const onRequest = async (context: { request: Request; env: Env }) => {
 
   // A valid, active license key means Pro: its own daily allowance, not shared with the free pool.
   const licenseKey = normalizeKey((body as { license?: unknown }).license);
-  const lic = licenseKey ? await lookupLicense(env.QUOTA, licenseKey) : null;
+  const lic = licenseKey ? await lookupLicenseFresh(env.QUOTA, licenseKey, { now: Date.now(), fetchSub: makeFetchSub(env) }) : null;
   const pro = !!lic?.active;
   const licenseState = licenseKey ? (pro ? "active" : lic ? "inactive" : "unknown") : undefined;
   const limit = pro ? PRO_DAILY : FREE_DAILY;

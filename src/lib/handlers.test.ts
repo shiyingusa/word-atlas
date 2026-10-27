@@ -131,3 +131,48 @@ test("webhook: rejects bad signatures, applies cancellations, deactivates the ke
   const noSecret = await run(webhook, new Request("https://wordlamp.net/api/paddle/webhook", { method: "POST", body: "{}" }), { QUOTA: kv });
   assert.equal(noSecret.status, 503);
 });
+
+test("lost webhook: the status endpoint and grading notice a cancellation by asking Paddle", async () => {
+  const kv = fakeKV();
+  mockNetwork();
+  const env = { PADDLE_API_KEY: "pdl_key", PADDLE_ENV: "sandbox", QUOTA: kv, DEEPSEEK_API_KEY: "sk" };
+  const key = (await run(claim, post("/api/license/claim", { transactionId: TXN }), env)).body.key as string;
+  assert.equal((await run(status, post("/api/license/status", { key }), env)).body.active, true);
+
+  // 7 hours pass, the cancellation webhook never arrived, but Paddle now says canceled
+  const rec = JSON.parse(kv.data.get(`sub:${SUB}`)!);
+  const back = 7 * 3600 * 1000;
+  kv.data.set(`sub:${SUB}`, JSON.stringify({ ...rec, checkedAt: rec.checkedAt - back, updatedAt: rec.updatedAt - back }));
+  mockNetwork({ subStatus: "canceled" });
+
+  const r = await run(status, post("/api/license/status", { key }), env);
+  assert.deepEqual([r.status, r.body.active, r.body.status], [200, false, "canceled"]);
+  const g = await run(grade, post("/api/grade", { essay: words(150), consent: true, license: key }), env);
+  assert.deepEqual([g.status, g.body.plan, g.body.license], [200, "free", "inactive"]);
+});
+
+test("webhook health check shows configuration and the last delivery, nothing secret", async () => {
+  const kv = fakeKV();
+  mockNetwork();
+  const env = { PADDLE_API_KEY: "k", PADDLE_ENV: "sandbox", PADDLE_WEBHOOK_SECRET: "pdl_ntfset_topsecret", QUOTA: kv };
+  const getHealth = (e: unknown) => run(webhook, new Request("https://wordlamp.net/api/paddle/webhook"), e);
+  let r = await getHealth(env);
+  assert.deepEqual([r.status, r.body.ready, r.body.lastDelivery], [200, true, null]);
+  assert.ok(!JSON.stringify(r.body).includes("topsecret"), "the secret is never echoed");
+  assert.equal((await getHealth({ QUOTA: kv })).body.ready, false);
+
+  const send = (secret: string, event: object) => {
+    const raw = JSON.stringify(event);
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = createHmac("sha256", secret).update(`${ts}:${raw}`).digest("hex");
+    return run(webhook, new Request("https://wordlamp.net/api/paddle/webhook", { method: "POST", headers: { "Paddle-Signature": `ts=${ts};h1=${sig}` }, body: raw }), env);
+  };
+  await send("wrong", { event_type: "subscription.canceled", data: { id: SUB, status: "canceled" } });
+  r = await getHealth(env);
+  assert.equal(r.body.lastDelivery.result, "bad_signature");
+  await send("pdl_ntfset_topsecret", { event_type: "subscription.canceled", occurred_at: new Date().toISOString(), data: { id: SUB, status: "canceled" } });
+  r = await getHealth(env);
+  assert.deepEqual([r.body.lastDelivery.result, r.body.lastDelivery.type], ["applied", "subscription.canceled"]);
+  await send("pdl_ntfset_topsecret", { event_type: "transaction.completed", data: { id: TXN } });
+  assert.equal((await getHealth(env)).body.lastDelivery.result, "ignored");
+});

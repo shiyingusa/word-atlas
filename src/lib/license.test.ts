@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import type { KVLike } from "../../functions/_lib/core";
-import { CLAIM_RETRY_MS, applySubscriptionUpdate, claimLicense, generateKey, isActiveStatus, lookupLicense, normalizeKey, parseSignatureHeader, subscriptionUpdateFromEvent, verifyPaddleSignature } from "../../functions/_lib/license";
+import { CLAIM_RETRY_MS, GRACE_MS, RECHECK_MS, applySubscriptionUpdate, claimLicense, generateKey, isActiveStatus, lookupLicense, lookupLicenseFresh, normalizeKey, parseSignatureHeader, subscriptionUpdateFromEvent, verifyPaddleSignature } from "../../functions/_lib/license";
+import type { FetchSub } from "../../functions/_lib/license";
 
 function fakeKV(): KVLike & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -104,4 +105,57 @@ test("a webhook that arrives before the claim does not lose the status", async (
   const c = await claimLicense(kv, { subId: "sub_9", customer: "ctm_9", email: "x@y.z", status: "active", ends: "2026-11-27T10:00:00Z", now: t0 + 2000, random: bytes(7) });
   assert.ok(c.ok);
   assert.equal((await lookupLicense(kv, c.ok ? c.key : ""))?.active, true);
+});
+
+async function claimed(kv: KVLike, t0: number, ends: string | null = "2026-11-27T10:00:00Z") {
+  const c = await claimLicense(kv, { subId: "sub_5", customer: "ctm_5", email: "", status: "active", ends, now: t0, random: bytes(5) });
+  assert.ok(c.ok);
+  return c.ok ? c.key : "";
+}
+
+test("a lost cancellation webhook is caught by the periodic re-check", async () => {
+  const kv = fakeKV();
+  const t0 = Date.parse("2026-10-27T10:00:00Z");
+  const key = await claimed(kv, t0);
+  let calls = 0;
+  const canceled: FetchSub = async () => {
+    calls++;
+    return { status: "canceled", ends: null, customer: "ctm_5" };
+  };
+
+  // within the re-check window nothing is asked of Paddle
+  assert.equal((await lookupLicenseFresh(kv, key, { now: t0 + RECHECK_MS - 1000, fetchSub: canceled }))?.active, true);
+  assert.equal(calls, 0);
+
+  // after the window Paddle is asked and the key stops working
+  const after = await lookupLicenseFresh(kv, key, { now: t0 + RECHECK_MS + 1000, fetchSub: canceled });
+  assert.deepEqual([after?.active, after?.status, calls], [false, "canceled", 1]);
+
+  // the answer is stored: no second call needed, and a stale webhook cannot revive it
+  assert.equal((await lookupLicenseFresh(kv, key, { now: t0 + RECHECK_MS + 2000, fetchSub: canceled }))?.active, false);
+  assert.equal(calls, 1);
+  assert.equal(await applySubscriptionUpdate(kv, { subId: "sub_5", status: "active", ends: null, customer: "ctm_5", at: t0 + 1000 }), "stale");
+});
+
+test("renewals are picked up by the re-check", async () => {
+  const kv = fakeKV();
+  const t0 = Date.parse("2026-10-27T10:00:00Z");
+  const key = await claimed(kv, t0);
+  const renewed: FetchSub = async () => ({ status: "active", ends: "2026-12-27T10:00:00Z", customer: "ctm_5" });
+  const r = await lookupLicenseFresh(kv, key, { now: t0 + RECHECK_MS + 1, fetchSub: renewed });
+  assert.deepEqual([r?.active, r?.ends], [true, "2026-12-27T10:00:00Z"]);
+});
+
+test("when Paddle cannot be reached the stored state is kept, until the paid period is long over", async () => {
+  const kv = fakeKV();
+  const t0 = Date.parse("2026-10-27T10:00:00Z");
+  const key = await claimed(kv, t0, "2026-11-27T10:00:00Z");
+  const down: FetchSub = async () => null;
+  const ends = Date.parse("2026-11-27T10:00:00Z");
+
+  assert.equal((await lookupLicenseFresh(kv, key, { now: t0 + RECHECK_MS + 1, fetchSub: down }))?.active, true, "outage does not lock out a paying user");
+  assert.equal((await lookupLicenseFresh(kv, key, { now: ends + GRACE_MS - 1000, fetchSub: down }))?.active, true, "still inside the grace period");
+  assert.equal((await lookupLicenseFresh(kv, key, { now: ends + GRACE_MS + 1000, fetchSub: down }))?.active, false, "an expired period is no longer trusted");
+  assert.equal((await lookupLicenseFresh(kv, key, { now: ends + GRACE_MS + 1000 }))?.active, false, "same without any fetcher");
+  assert.equal(await lookupLicenseFresh(kv, "WL-AAAAA-AAAAA-AAAAA-AAAAA", { now: t0, fetchSub: down }), null);
 });

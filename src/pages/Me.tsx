@@ -4,6 +4,8 @@ import { useMemo, useRef } from "react";
 import { useAtlas } from "../atlas/context";
 import { isMastered } from "../store/srs";
 import { dayKey, exportBackup, importBackup, resetProgress, store, useStore, type Settings } from "../store/store";
+import { BadgePanel } from "../ui/Badges";
+import { ReminderPanel } from "../ui/Reminder";
 import { toast } from "../ui/Toast";
 import { streakOf } from "./Today";
 
@@ -107,6 +109,9 @@ export function Me({ privateAvailable }: { privateAvailable: boolean }) {
             ))}
           </ol>
         </section>
+
+        <BadgePanel />
+        <ReminderPanel />
 
         <section className="panel settings">
           <h3 className="eyebrow">学习设置</h3>

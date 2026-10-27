@@ -1,9 +1,11 @@
 /** POST /api/license/status { key } — is this license key valid and active? Binding: QUOTA (KV). */
 import { dayKey } from "../../_lib/core";
 import type { KVLike } from "../../_lib/core";
-import { bump, lookupLicense, normalizeKey, sha256Hex } from "../../_lib/license";
+import { bump, lookupLicenseFresh, makeFetchSub, normalizeKey, sha256Hex } from "../../_lib/license";
 
 interface Env {
+  PADDLE_API_KEY?: string;
+  PADDLE_ENV?: string;
   QUOTA?: KVLike;
   IP_SALT?: string;
 }
@@ -32,7 +34,7 @@ export const onRequest = async ({ request, env }: { request: Request; env: Env }
   if (!(await bump(env.QUOTA, `rl:status:${dayKey()}:${who}`, 200))) return json({ ok: false, error: "尝试次数太多，请稍后再试。", code: "rate_limited" }, 429);
 
   const key = normalizeKey(input);
-  const state = key ? await lookupLicense(env.QUOTA, key) : null;
+  const state = key ? await lookupLicenseFresh(env.QUOTA, key, { now: Date.now(), fetchSub: makeFetchSub(env) }) : null;
   if (!key || !state) return json({ ok: false, error: "这个许可证密钥不正确。请检查是否完整复制。", code: "invalid" }, 404);
   return json({ ok: true, key, active: state.active, status: state.status, renewsAt: state.ends });
 };

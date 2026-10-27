@@ -1,6 +1,8 @@
 import { Loader2, PenLine, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CRITERIA, FREE_DAILY, MAX_WORDS, MIN_WORDS, PRO_DAILY, countWords } from "../../functions/_lib/core";
+import { addEssay, deltaVsPrevious } from "../lib/essays";
+import { EssayTrend } from "../ui/EssayTrend";
 import type { CriterionKey, Grade } from "../../functions/_lib/core";
 import "../styles/write.css";
 
@@ -11,7 +13,7 @@ const NAMES: Record<CriterionKey, [string, string]> = {
   GRA: ["语法范围与准确", "Grammatical Range & Accuracy"],
 };
 
-type Result = { grade: Grade; words: number; remaining: number; limit: number; plan: "free" | "pro" };
+type Result = { grade: Grade; words: number; remaining: number; limit: number; plan: "free" | "pro"; delta: number | null };
 type GradeReply = { grade: Grade; words: number; remaining: number; limit: number; plan: "free" | "pro"; license?: "active" | "inactive" | "unknown" };
 type StatusReply = { key: string; active: boolean; status: string; renewsAt: string | null };
 type ClaimReply = { key: string; active: boolean; renewsAt: string | null };
@@ -139,7 +141,9 @@ export function Write() {
         setPlan({ active: false, renewsAt: null });
         setLicMsg("你的 Pro 订阅已经结束或暂停，这次按免费额度批改。续订后可继续使用。");
       }
-      setResult({ grade: data.grade, words: data.words, remaining: data.remaining, limit: data.limit, plan: data.plan });
+      const g = data.grade;
+      const history = addEssay({ at: Date.now(), overall: g.overall, tr: g.criteria.TR.score, cc: g.criteria.CC.score, lr: g.criteria.LR.score, gra: g.criteria.GRA.score, words: data.words });
+      setResult({ grade: g, words: data.words, remaining: data.remaining, limit: data.limit, plan: data.plan, delta: deltaVsPrevious(history) });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "出了点问题，请稍后再试。");
@@ -197,9 +201,17 @@ export function Write() {
             <b>{g.overall.toFixed(1)}</b>
             <span>估算总分</span>
           </div>
-          <p className="lede">
-            参考区间 {g.low.toFixed(1)}–{g.high.toFixed(1)}，共 {result.words} 词。这是 AI 给出的学习参考，不是官方评分，也不保证真实考试成绩。
-          </p>
+          <div>
+            <p className="lede">
+              参考区间 {g.low.toFixed(1)}–{g.high.toFixed(1)}，共 {result.words} 词。这是 AI 给出的学习参考，不是官方评分，也不保证真实考试成绩。
+            </p>
+            {result.delta !== null && (
+              <p className={`wr-delta ${result.delta > 0 ? "is-up" : result.delta < 0 ? "is-down" : ""}`}>
+                比上一篇 {result.delta > 0 ? "+" : ""}
+                {result.delta.toFixed(1)}：{result.delta > 0 ? "进步了，继续保持。" : result.delta < 0 ? "这篇略低，别灰心，看看下面的逐句建议。" : "和上一篇持平。"}
+              </p>
+            )}
+          </div>
         </header>
 
         <section className="wr-grid">
@@ -261,6 +273,7 @@ export function Write() {
       <p className="lede">粘贴一篇雅思大作文（Task 2），按任务回应、连贯衔接、词汇、语法四个维度给出估算分、逐句修改和练习建议。每天 {FREE_DAILY} 次免费，Pro 每天 {PRO_DAILY} 次。</p>
 
       {renderPlan()}
+      <EssayTrend />
 
       <label className="wr-label" htmlFor="wr-q">
         作文题目（可选）

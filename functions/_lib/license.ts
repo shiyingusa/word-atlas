@@ -8,6 +8,10 @@ import type { KVLike } from "./core";
 
 export const CLAIM_RETRY_MS = 15 * 60 * 1000;
 export const WEBHOOK_TOLERANCE_S = 300;
+/** Webhooks can be lost, so a key in use is re-checked with Paddle at least this often. */
+export const RECHECK_MS = 6 * 3600 * 1000;
+/** If Paddle cannot be reached and the paid period ended longer ago than this, stop trusting an old "active". */
+export const GRACE_MS = 3 * 24 * 3600 * 1000;
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 symbols, no 0/O/1/I
 const KEY_RE = /^WL-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}(?:-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}){3}$/;
@@ -20,6 +24,8 @@ export interface SubRecord {
   email: string;
   claimedAt: number;
   updatedAt: number;
+  /** When the status was last confirmed (webhook or direct check with Paddle). */
+  checkedAt?: number;
 }
 export interface LicRecord {
   sub: string;
@@ -131,6 +137,7 @@ export async function applySubscriptionUpdate(kv: KVLike, u: SubscriptionUpdate)
     email: cur?.email ?? "",
     claimedAt: cur?.claimedAt ?? 0,
     updatedAt: u.at,
+    checkedAt: u.at,
   };
   await kv.put(`sub:${u.subId}`, JSON.stringify(next));
   return "applied";
@@ -157,7 +164,7 @@ export async function claimLicense(kv: KVLike, i: ClaimInput): Promise<ClaimResu
     return { ok: false, code: "already_claimed" };
   }
   const key = generateKey(i.random);
-  const sub: SubRecord = { key, status: i.status, ends: i.ends, customer: i.customer, email: i.email, claimedAt: i.now, updatedAt: i.now };
+  const sub: SubRecord = { key, status: i.status, ends: i.ends, customer: i.customer, email: i.email, claimedAt: i.now, updatedAt: i.now, checkedAt: i.now };
   const lic: LicRecord = { sub: i.subId, created: i.now };
   await kv.put(`lic:${key}`, JSON.stringify(lic));
   await kv.put(`sub:${i.subId}`, JSON.stringify(sub));
@@ -177,6 +184,38 @@ export async function lookupLicense(kv: KVLike, key: string): Promise<LicenseSta
   const sub = await readJson<SubRecord>(kv, `sub:${lic.sub}`);
   if (!sub || sub.key !== key) return null;
   return { active: isActiveStatus(sub.status), status: sub.status, ends: sub.ends };
+}
+
+export interface RemoteSub {
+  status: string;
+  ends: string | null;
+  customer: string;
+}
+export type FetchSub = (subId: string) => Promise<RemoteSub | null>;
+
+/**
+ * Like lookupLicense, but does not rely on webhooks alone: when the stored status has not been confirmed
+ * for RECHECK_MS it asks Paddle directly. If Paddle cannot be reached the stored state is kept, except
+ * that an "active" subscription whose period ended more than GRACE_MS ago is no longer trusted.
+ */
+export async function lookupLicenseFresh(kv: KVLike, key: string, opts: { now: number; fetchSub?: FetchSub }): Promise<LicenseState | null> {
+  const lic = await readJson<LicRecord>(kv, `lic:${key}`);
+  if (!lic) return null;
+  let sub = await readJson<SubRecord>(kv, `sub:${lic.sub}`);
+  if (!sub || sub.key !== key) return null;
+
+  let confirmed = false;
+  if (opts.fetchSub && opts.now - (sub.checkedAt ?? sub.updatedAt) > RECHECK_MS) {
+    const remote = await opts.fetchSub(lic.sub);
+    if (remote) {
+      sub = { ...sub, status: remote.status, ends: remote.ends, customer: remote.customer || sub.customer, updatedAt: Math.max(sub.updatedAt, opts.now), checkedAt: opts.now };
+      await kv.put(`sub:${lic.sub}`, JSON.stringify(sub));
+      confirmed = true;
+    }
+  }
+  let active = isActiveStatus(sub.status);
+  if (active && !confirmed && sub.ends && Date.parse(sub.ends) + GRACE_MS < opts.now) active = false;
+  return { active, status: sub.status, ends: sub.ends };
 }
 
 /* ---------- small helpers shared by the endpoints ---------- */
@@ -201,6 +240,24 @@ export class PaddleError extends Error {
 }
 
 export const paddleBase = (env?: string) => (env === "sandbox" ? "https://sandbox-api.paddle.com" : "https://api.paddle.com");
+
+export function makeFetchSub(env: { PADDLE_API_KEY?: string; PADDLE_ENV?: string }): FetchSub | undefined {
+  const apiKey = env.PADDLE_API_KEY;
+  if (!apiKey) return undefined;
+  const base = paddleBase(env.PADDLE_ENV);
+  return async (subId) => {
+    try {
+      const d = (await paddleGet(base, apiKey, `/subscriptions/${subId}`)).data;
+      if (!d || typeof d.status !== "string") return null;
+      const period = d.current_billing_period as { ends_at?: unknown } | null | undefined;
+      const sched = d.scheduled_change as { effective_at?: unknown } | null | undefined;
+      const ends = typeof period?.ends_at === "string" ? period.ends_at : typeof sched?.effective_at === "string" ? sched.effective_at : null;
+      return { status: d.status, ends, customer: typeof d.customer_id === "string" ? d.customer_id : "" };
+    } catch {
+      return null; // keep the stored state; the next use will try again
+    }
+  };
+}
 
 export async function paddleGet(base: string, apiKey: string, path: string): Promise<{ data?: Record<string, unknown> }> {
   const ctl = new AbortController();

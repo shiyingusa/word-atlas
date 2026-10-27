@@ -1,0 +1,33 @@
+/* Topic names in the star map are buttons: tap one to fly into that topic's stars. */
+.galaxy-labels .galaxy-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font: 600 12px/1 var(--sans);
+  letter-spacing: 0.24em;
+  color: var(--c);
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+  will-change: transform, opacity;
+}
+.galaxy-labels .galaxy-label:hover,
+.galaxy-labels .galaxy-label:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: 1px solid var(--c);
+}
+.galaxy .galaxy-hint {
+  padding: 0 16px;
+  text-wrap: balance;
+  color: rgba(243, 236, 223, 0.85);
+  font-size: 13px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+.galaxy .galaxy-hint b { color: var(--ochre); font-weight: 600; }

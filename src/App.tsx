@@ -15,6 +15,7 @@ import { Today } from "./pages/Today";
 import { Write } from "./pages/Write";
 import { cue } from "./lib/sound";
 import { store, useStore } from "./store/store";
+import { BadgeWatcher } from "./ui/Badges";
 import { EntryView } from "./ui/EntryView";
 import { AmbienceController, AmbiencePicker } from "./ui/Ambience";
 import { Logo } from "./ui/Logo";
@@ -193,6 +194,7 @@ function Shell({ privateAvailable }: { privateAvailable: boolean }) {
       <Palette open={palette} onClose={() => setPalette(false)} />
       {!onboarded && route.page !== "about" && !splash && <Onboarding />}
       {splash && <Splash onDone={() => setSplash(false)} />}
+      <BadgeWatcher />
       <Toasts />
       <AmbienceController />
     </div>

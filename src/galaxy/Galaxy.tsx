@@ -1,4 +1,5 @@
 import { Crosshair, Minus, Plus, RotateCcw, Share2 } from "lucide-react";
+import "../styles/galaxy.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtlas } from "../atlas/context";
 import type { WordRef } from "../atlas/types";
@@ -64,6 +65,34 @@ export function Galaxy({
   const [hover, setHover] = useState<{ ref: WordRef; x: number; y: number } | null>(null);
   const [fallback, setFallback] = useState(false);
   const highlightSet = useMemo(() => new Set(highlight ?? []), [highlight]);
+  const [note, setNote] = useState<string | null>(null);
+  // For each topic, the star nearest its label: where "fly to this topic" lands.
+  const topicStar = useMemo(
+    () =>
+      atlas.topics.map((_, t) => {
+        const [cx, cy, cz] = layout.topicCenters[t];
+        let best = -1;
+        let bd = Infinity;
+        atlas.words.forEach((w, i) => {
+          if (w.topic !== t) return;
+          const dx = layout.positions[i * 3] - cx;
+          const dy = layout.positions[i * 3 + 1] - cy;
+          const dz = layout.positions[i * 3 + 2] - cz;
+          const d = dx * dx + dy * dy + dz * dz;
+          if (d < bd) {
+            bd = d;
+            best = i;
+          }
+        });
+        return best;
+      }),
+    [atlas, layout],
+  );
+  useEffect(() => {
+    if (!note) return;
+    const t = window.setTimeout(() => setNote(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [note]);
 
   useEffect(() => {
     const cv = canvas.current;
@@ -99,7 +128,9 @@ export function Galaxy({
             return;
           }
           el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
-          el.style.opacity = String(Math.max(0, Math.min(0.9, 3.4 - p.depth)));
+          const o = Math.max(0, Math.min(0.9, 3.4 - p.depth));
+          el.style.opacity = String(o);
+          el.style.pointerEvents = o > 0.25 ? "auto" : "none";
         });
       };
     }
@@ -240,7 +271,11 @@ export function Galaxy({
     if (!eng || !d || d.moved > 8) return;
     const p = local(e);
     const i = eng.pick(p.x, p.y, e.pointerType === "mouse" ? 16 : 26);
-    if (i < 0) return;
+    if (i < 0) {
+      // Nothing under the finger: zoom in a little so the stars get bigger and easier to hit.
+      eng.cam.dist = clampDist(eng.cam.dist * 0.8);
+      return;
+    }
     const ref = atlas.words[i];
     if (e.pointerType !== "mouse" && hover?.ref.id !== ref.id) {
       // First tap previews, second tap opens.
@@ -287,7 +322,9 @@ export function Galaxy({
         onPointerDown={onDown}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        onPointerLeave={() => {
+        onPointerLeave={(e) => {
+          // Moving onto the preview card is not leaving the map: keep the card so it can be clicked.
+          if (e.relatedTarget instanceof Element && e.relatedTarget.closest(".galaxy-tip")) return;
           if (engine.current) engine.current.hover = -1;
           setHover(null);
         }}
@@ -306,16 +343,40 @@ export function Galaxy({
           if (e.key === "-") eng.cam.dist = clampDist(eng.cam.dist * 1.18);
         }}
       />
-      <div className="galaxy-labels" ref={labels} aria-hidden="true">
+      <div className="galaxy-labels" ref={labels}>
         {atlas.topics.map(([key, name], t) => (
-          <span key={key} style={{ "--c": TOPIC_COLORS[t % TOPIC_COLORS.length] } as React.CSSProperties}>
+          <button
+            type="button"
+            key={key}
+            className="galaxy-label"
+            style={{ "--c": TOPIC_COLORS[t % TOPIC_COLORS.length] } as React.CSSProperties}
+            aria-label={`飞到话题：${name}`}
+            onClick={() => {
+              const i = topicStar[t];
+              if (i < 0) return;
+              engine.current?.flyTo(i, 0.45);
+              if (store.get().settings.sfx) void cue("fly");
+              setNote(`已飞到「${name}」，点一颗星打开词条`);
+              // Once the camera has arrived, preview the word it landed on so there is an obvious thing to tap.
+              window.clearTimeout(dwell.current);
+              dwell.current = window.setTimeout(() => {
+                const cv = canvas.current;
+                if (cv) setHover({ ref: atlas.words[i], x: cv.clientWidth / 2, y: cv.clientHeight / 2 });
+              }, 1700);
+            }}
+          >
             {name}
-          </span>
+          </button>
         ))}
       </div>
       {hover && (
         <button
           className="galaxy-tip"
+          onPointerEnter={() => window.clearTimeout(dwell.current)}
+          onPointerLeave={(e) => {
+            if (e.relatedTarget === canvas.current) return;
+            setHover(null);
+          }}
           style={{ transform: `translate(${Math.min(hover.x + 18, (canvas.current?.clientWidth ?? 0) - 260)}px, ${Math.max(8, hover.y - 46)}px)` }}
           onClick={() => openWord(hover.ref.id)}
         >
@@ -382,7 +443,7 @@ export function Galaxy({
           <Share2 size={17} />
         </button>
       </div>
-      <p className="galaxy-hint">拖动旋转 · 滚动缩放 · 点击星星打开词条</p>
+      <p className="galaxy-hint">{note ? <b>{note}</b> : "点话题名飞过去 · 点星星打开词条 · 点空白处放大 · 拖动旋转"}</p>
     </div>
   );
 }
