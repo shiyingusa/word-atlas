@@ -176,3 +176,28 @@ test("webhook health check shows configuration and the last delivery, nothing se
   await send("pdl_ntfset_topsecret", { event_type: "transaction.completed", data: { id: TXN } });
   assert.equal((await getHealth(env)).body.lastDelivery.result, "ignored");
 });
+
+test("a secret pasted with a trailing line break still verifies, and the health check reports the format and the reason for failures", async () => {
+  const kv = fakeKV();
+  mockNetwork();
+  const env = { PADDLE_API_KEY: "k", PADDLE_ENV: "sandbox", PADDLE_WEBHOOK_SECRET: "pdl_ntfset_abc123\n", QUOTA: kv };
+  const health = () => run(webhook, new Request("https://wordlamp.net/api/paddle/webhook"), env);
+  let r = await health();
+  assert.deepEqual(r.body.secretFormat, { prefixOk: true, length: 17, hadOuterWhitespaceOrQuotes: true });
+  assert.ok(!JSON.stringify(r.body).includes("abc123"), "no part of the secret is shown");
+
+  const send = (secret: string, ts: number) => {
+    const raw = JSON.stringify({ event_type: "subscription.updated", occurred_at: new Date().toISOString(), data: { id: SUB, status: "active" } });
+    const sig = createHmac("sha256", secret).update(`${ts}:${raw}`).digest("hex");
+    return run(webhook, new Request("https://wordlamp.net/api/paddle/webhook", { method: "POST", headers: { "Paddle-Signature": `ts=${ts};h1=${sig}` }, body: raw }), env);
+  };
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal((await send("pdl_ntfset_abc123", now)).status, 200, "the cleaned secret matches");
+  assert.equal((await health()).body.lastDelivery.result, "applied");
+  assert.equal((await send("pdl_ntfset_WRONG", now)).status, 401);
+  r = await health();
+  assert.deepEqual([r.body.lastDelivery.result, r.body.lastDelivery.reason], ["bad_signature", "mismatch"]);
+  assert.equal((await send("pdl_ntfset_abc123", now - 4000)).status, 401);
+  r = await health();
+  assert.deepEqual([r.body.lastDelivery.reason, r.body.lastDelivery.skewSeconds], ["timestamp_out_of_range", 4000]);
+});

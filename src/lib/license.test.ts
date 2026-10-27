@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 import type { KVLike } from "../../functions/_lib/core";
-import { CLAIM_RETRY_MS, GRACE_MS, RECHECK_MS, applySubscriptionUpdate, claimLicense, generateKey, isActiveStatus, lookupLicense, lookupLicenseFresh, normalizeKey, parseSignatureHeader, subscriptionUpdateFromEvent, verifyPaddleSignature } from "../../functions/_lib/license";
+import { CLAIM_RETRY_MS, GRACE_MS, RECHECK_MS, applySubscriptionUpdate, checkPaddleSignature, cleanSecret, claimLicense, generateKey, isActiveStatus, lookupLicense, lookupLicenseFresh, normalizeKey, parseSignatureHeader, subscriptionUpdateFromEvent, verifyPaddleSignature } from "../../functions/_lib/license";
 import type { FetchSub } from "../../functions/_lib/license";
 
 function fakeKV(): KVLike & { data: Map<string, string> } {
@@ -158,4 +158,21 @@ test("when Paddle cannot be reached the stored state is kept, until the paid per
   assert.equal((await lookupLicenseFresh(kv, key, { now: ends + GRACE_MS + 1000, fetchSub: down }))?.active, false, "an expired period is no longer trusted");
   assert.equal((await lookupLicenseFresh(kv, key, { now: ends + GRACE_MS + 1000 }))?.active, false, "same without any fetcher");
   assert.equal(await lookupLicenseFresh(kv, "WL-AAAAA-AAAAA-AAAAA-AAAAA", { now: t0, fetchSub: down }), null);
+});
+
+test("signature failures say why, and pasted secrets are cleaned", async () => {
+  const body = "{}";
+  const now = 1_800_000_000;
+  const sig = (secret: string, ts = now) => `ts=${ts};h1=${sign(secret, ts, body)}`;
+  assert.deepEqual(await checkPaddleSignature(body, sig("s"), "s", now), { ok: true });
+  assert.deepEqual(await checkPaddleSignature(body, sig("s"), "other", now), { ok: false, reason: "mismatch" });
+  assert.deepEqual(await checkPaddleSignature(body, null, "s", now), { ok: false, reason: "no_header" });
+  assert.deepEqual(await checkPaddleSignature(body, "nonsense", "s", now), { ok: false, reason: "malformed_header" });
+  assert.deepEqual(await checkPaddleSignature(body, sig("s", now - 3600), "s", now), { ok: false, reason: "timestamp_out_of_range", skewSeconds: 3600 });
+
+  assert.equal(cleanSecret("  pdl_ntfset_abc\n"), "pdl_ntfset_abc");
+  assert.equal(cleanSecret('"pdl_ntfset_abc"'), "pdl_ntfset_abc");
+  assert.equal(cleanSecret(" 'pdl_ntfset_abc' \r\n"), "pdl_ntfset_abc");
+  assert.equal(cleanSecret(undefined), "");
+  assert.equal(await checkPaddleSignature(body, sig("pdl_ntfset_abc"), cleanSecret("pdl_ntfset_abc \n"), now).then((r) => r.ok), true);
 });

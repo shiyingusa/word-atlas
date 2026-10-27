@@ -5,7 +5,7 @@
  */
 import { dayKey } from "../../_lib/core";
 import type { KVLike } from "../../_lib/core";
-import { PaddleError, bump, claimLicense, isActiveStatus, paddleBase, paddleGet, sha256Hex } from "../../_lib/license";
+import { PaddleError, bump, claimLicense, cleanSecret, isActiveStatus, paddleBase, paddleGet, sha256Hex } from "../../_lib/license";
 
 interface Env {
   PADDLE_API_KEY?: string;
@@ -39,14 +39,15 @@ export const onRequest = async ({ request, env }: { request: Request; env: Env }
   if (!(await bump(env.QUOTA, `rl:claim:${dayKey()}:${who}`, 40))) return fail(429, "尝试次数太多，请稍后再试。", "rate_limited");
 
   const base = paddleBase(env.PADDLE_ENV);
+  const apiKey = cleanSecret(env.PADDLE_API_KEY);
   try {
-    const txn = (await paddleGet(base, env.PADDLE_API_KEY, `/transactions/${transactionId}`)).data ?? {};
+    const txn = (await paddleGet(base, apiKey, `/transactions/${transactionId}`)).data ?? {};
     const status = String(txn.status ?? "");
     const subId = typeof txn.subscription_id === "string" ? txn.subscription_id : "";
     if (status !== "completed" && status !== "paid") return fail(409, "付款还在处理中，请稍等几秒。", "pending");
     if (!subId) return fail(409, "订阅还在创建中，请稍等几秒。", "pending");
 
-    const sub = (await paddleGet(base, env.PADDLE_API_KEY, `/subscriptions/${subId}`)).data ?? {};
+    const sub = (await paddleGet(base, apiKey, `/subscriptions/${subId}`)).data ?? {};
     const period = sub.current_billing_period as { ends_at?: unknown } | null | undefined;
     const subStatus = String(sub.status ?? "");
     const ends = typeof period?.ends_at === "string" ? period.ends_at : null;
@@ -54,7 +55,7 @@ export const onRequest = async ({ request, env }: { request: Request; env: Env }
     let email = "";
     if (customer) {
       try {
-        const c = (await paddleGet(base, env.PADDLE_API_KEY, `/customers/${customer}`)).data;
+        const c = (await paddleGet(base, apiKey, `/customers/${customer}`)).data;
         if (typeof c?.email === "string") email = c.email;
       } catch {
         /* the email is only a convenience for support */

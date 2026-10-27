@@ -82,14 +82,27 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+export type SignatureCheck = { ok: true } | { ok: false; reason: "no_header" | "malformed_header" | "timestamp_out_of_range" | "mismatch"; skewSeconds?: number };
+
 /** Paddle signs `${ts}:${rawBody}` with HMAC-SHA256. Several h1 values appear during secret rotation. */
-export async function verifyPaddleSignature(raw: string, header: string | null, secret: string, nowSec: number, toleranceSec = WEBHOOK_TOLERANCE_S): Promise<boolean> {
+export async function checkPaddleSignature(raw: string, header: string | null, secret: string, nowSec: number, toleranceSec = WEBHOOK_TOLERANCE_S): Promise<SignatureCheck> {
+  if (!header) return { ok: false, reason: "no_header" };
   const p = parseSignatureHeader(header);
-  if (!p) return false;
-  const ts = Number(p.ts);
-  if (!Number.isFinite(ts) || Math.abs(nowSec - ts) > toleranceSec) return false;
+  const ts = p ? Number(p.ts) : Number.NaN;
+  if (!p || !Number.isFinite(ts)) return { ok: false, reason: "malformed_header" };
+  const skew = nowSec - ts;
+  if (Math.abs(skew) > toleranceSec) return { ok: false, reason: "timestamp_out_of_range", skewSeconds: Math.round(skew) };
   const expected = await hmacSha256Hex(secret, `${p.ts}:${raw}`);
-  return p.sigs.some((s) => timingSafeEqual(s.toLowerCase(), expected));
+  return p.sigs.some((s) => timingSafeEqual(s.toLowerCase(), expected)) ? { ok: true } : { ok: false, reason: "mismatch" };
+}
+
+export async function verifyPaddleSignature(raw: string, header: string | null, secret: string, nowSec: number, toleranceSec = WEBHOOK_TOLERANCE_S): Promise<boolean> {
+  return (await checkPaddleSignature(raw, header, secret, nowSec, toleranceSec)).ok;
+}
+
+/** Secrets pasted into a dashboard often pick up spaces, line breaks or quotes: strip them. */
+export function cleanSecret(v: string | undefined): string {
+  return (v ?? "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
 }
 
 /* ---------- webhook events -> subscription state ---------- */
@@ -242,7 +255,7 @@ export class PaddleError extends Error {
 export const paddleBase = (env?: string) => (env === "sandbox" ? "https://sandbox-api.paddle.com" : "https://api.paddle.com");
 
 export function makeFetchSub(env: { PADDLE_API_KEY?: string; PADDLE_ENV?: string }): FetchSub | undefined {
-  const apiKey = env.PADDLE_API_KEY;
+  const apiKey = cleanSecret(env.PADDLE_API_KEY);
   if (!apiKey) return undefined;
   const base = paddleBase(env.PADDLE_ENV);
   return async (subId) => {
