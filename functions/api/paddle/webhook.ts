@@ -7,6 +7,8 @@ import { applySubscriptionUpdate, checkPaddleSignature, cleanSecret, subscriptio
 
 interface Env {
   PADDLE_WEBHOOK_SECRET?: string;
+  PADDLE_API_KEY?: string;
+  PADDLE_ENV?: string;
   QUOTA?: KVLike;
 }
 
@@ -32,7 +34,12 @@ export const onRequest = async ({ request, env }: { request: Request; env: Env }
     }
     const secret = cleanSecret(env.PADDLE_WEBHOOK_SECRET);
     const secretFormat = secret ? { prefixOk: secret.startsWith("pdl_ntfset_"), length: secret.length, hadOuterWhitespaceOrQuotes: secret !== (env.PADDLE_WEBHOOK_SECRET ?? "") } : null;
-    return reply(200, { ok: true, ready: !!(secret && env.QUOTA), secretSet: !!secret, storageBound: !!env.QUOTA, secretFormat, lastDelivery: last });
+    // Is the API key the kind this environment needs? Only the kind and length are shown, never the key.
+    const apiKey = cleanSecret(env.PADDLE_API_KEY);
+    const kind = apiKey.startsWith("pdl_live_apikey_") ? "live" : apiKey.startsWith("pdl_sdbx_apikey_") ? "sandbox" : apiKey ? "unknown" : null;
+    const wanted = env.PADDLE_ENV === "sandbox" ? "sandbox" : "live";
+    const paddle = { env: env.PADDLE_ENV ?? null, expects: wanted, apiKeyKind: kind, apiKeyLength: apiKey.length, apiKeyMatchesEnv: kind === wanted };
+    return reply(200, { ok: true, ready: !!(secret && env.QUOTA), secretSet: !!secret, storageBound: !!env.QUOTA, secretFormat, paddle, lastDelivery: last });
   }
   if (request.method !== "POST") return reply(405, { ok: false });
   const secret = cleanSecret(env.PADDLE_WEBHOOK_SECRET);

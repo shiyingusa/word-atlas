@@ -201,3 +201,21 @@ test("a secret pasted with a trailing line break still verifies, and the health 
   r = await health();
   assert.deepEqual([r.body.lastDelivery.reason, r.body.lastDelivery.skewSeconds], ["timestamp_out_of_range", 4000]);
 });
+
+test("the health check says whether the API key matches the Paddle environment, without showing the key", async () => {
+  const kv = fakeKV();
+  const health = (env: object) => run(webhook, new Request("https://wordlamp.net/api/paddle/webhook"), env);
+  const live = "pdl_live_apikey_01abcdefghij_secretsecretsecret";
+  const sbx = "pdl_sdbx_apikey_01abcdefghij_secretsecretsecret";
+  let r = await health({ QUOTA: kv, PADDLE_ENV: "production", PADDLE_API_KEY: live });
+  assert.deepEqual([r.body.paddle.env, r.body.paddle.apiKeyKind, r.body.paddle.apiKeyMatchesEnv], ["production", "live", true]);
+  assert.ok(!JSON.stringify(r.body).includes("secretsecret"), "the key is never echoed");
+  r = await health({ QUOTA: kv, PADDLE_ENV: "production", PADDLE_API_KEY: sbx });
+  assert.deepEqual([r.body.paddle.apiKeyKind, r.body.paddle.apiKeyMatchesEnv], ["sandbox", false], "a sandbox key with the live environment is flagged");
+  r = await health({ QUOTA: kv, PADDLE_ENV: "sandbox", PADDLE_API_KEY: sbx + "\n" });
+  assert.equal(r.body.paddle.apiKeyMatchesEnv, true, "a pasted line break does not matter");
+  r = await health({ QUOTA: kv, PADDLE_ENV: "production", PADDLE_API_KEY: "apikey_nonsense" });
+  assert.deepEqual([r.body.paddle.apiKeyKind, r.body.paddle.apiKeyMatchesEnv], ["unknown", false]);
+  r = await health({ QUOTA: kv });
+  assert.deepEqual([r.body.paddle.apiKeyKind, r.body.paddle.apiKeyMatchesEnv], [null, false]);
+});
