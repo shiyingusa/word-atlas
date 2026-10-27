@@ -3,6 +3,8 @@ import { MEDIA } from "./types";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const url = (p: string) => `${BASE}/atlas/${p}`;
+/** Recordings live in object storage (R2). Unset = no recordings; the device voice is used instead. */
+const AUDIO_BASE = ((import.meta.env.VITE_AUDIO_BASE as string | undefined) ?? "").replace(/\/$/, "");
 
 interface IndexFile {
   id: string;
@@ -81,7 +83,7 @@ export async function loadOpenAtlas(): Promise<Atlas> {
     audio(ref, kind) {
       const m = "media" in ref && typeof ref.media === "number" ? ref.media : (ref as Entry).m;
       const bit = MEDIA[kind];
-      return m & bit ? url(`audio/${kind}/${ref.id}.mp3`) : null;
+      return m & bit && AUDIO_BASE ? `${AUDIO_BASE}/${kind}/${ref.id}.mp3` : null;
     },
   };
 }

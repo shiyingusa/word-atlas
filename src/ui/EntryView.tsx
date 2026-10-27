@@ -93,7 +93,7 @@ export function EntryView({ entry, mode = "detail", eager = true }: { entry: Ent
           <p className="specimen">
             № {String(ref.order + 1).padStart(4, "0")}
             <i />
-            Word Atlas
+            WordLamp
           </p>
         )}
         <h2 className="headword" lang="en">

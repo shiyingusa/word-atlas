@@ -1,6 +1,6 @@
 import { AudioLines, Check, CloudRain, Coffee, Flame, Sailboat, Sparkles, Trees, VolumeX, Waves } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AMBIENCE, primeCues, setAmbience, type AmbienceId } from "../lib/sound";
+import { AMBIENCE, SOUND_ENABLED, primeCues, setAmbience, type AmbienceId } from "../lib/sound";
 import { store, useStore } from "../store/store";
 
 const ICONS: Record<AmbienceId, typeof CloudRain> = { stars: Sparkles, rain: CloudRain, sea: Waves, forest: Trees, fire: Flame, voyage: Sailboat, cafe: Coffee };
@@ -46,6 +46,7 @@ export function AmbiencePicker() {
     };
   }, [open]);
   const on = ambience !== "off";
+  if (!SOUND_ENABLED) return null;
   return (
     <div className="amb" ref={box}>
       <button className={`icon-btn amb-btn ${on ? "is-on" : ""}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="环境声" title="环境声">

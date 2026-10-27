@@ -3,6 +3,8 @@
  * loops are gapless and the ambience can duck under pronunciations.
  */
 const BASE = `${import.meta.env.BASE_URL}sfx/`;
+/** Interface sounds are off until licensed replacements are added to public/sfx. */
+export const SOUND_ENABLED = false;
 
 export type Cue = "correct" | "wrong" | "flip" | "page" | "complete" | "streak" | "start" | "tap" | "key" | "twinkle" | "fly" | "ignite";
 export const AMBIENCE = [
@@ -48,6 +50,7 @@ function audio() {
 }
 
 function load(file: string) {
+  if (!SOUND_ENABLED) return Promise.resolve(null);
   let p = buffers.get(file);
   if (!p) {
     const c = audio();

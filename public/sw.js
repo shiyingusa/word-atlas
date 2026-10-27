@@ -1,4 +1,4 @@
-/* Word Atlas offline cache: app shell network-first, everything else cache-first. */
+/* WordLamp offline cache: app shell network-first, everything else cache-first. */
 const VERSION = "atlas-v1";
 const SHELL = `${VERSION}-shell`;
 const MEDIA = `${VERSION}-media`;

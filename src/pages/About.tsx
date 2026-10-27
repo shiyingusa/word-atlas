@@ -1,6 +1,6 @@
 import { ArrowUpRight, Database, Github, Heart } from "lucide-react";
 import { useAtlas } from "../atlas/context";
-import { REPO_URL } from "../config";
+import { REPO_URL, UPSTREAM_URL } from "../config";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -11,12 +11,12 @@ export function About() {
       <header className="about-hero">
         <img src={`${BASE}brand/og.webp`} alt="" />
         <div>
-          <p className="eyebrow">关于词光</p>
+          <p className="eyebrow">关于词灯</p>
           <h1 className="display">一词一画，点亮雅思。</h1>
           <p className="lede">
-            词光把雅思阅读 8000 词整理成 {atlas.count.toLocaleString()} 个词条。每个词一幅原创插画，一句日常例句，一句雅思例句，配英美发音、常用搭配和易混提示。学会一个，就在你的星图上点亮一颗星。
+            词灯把雅思阅读 8000 词整理成 {atlas.count.toLocaleString()} 个词条。每个词一幅原创插画，一句日常例句，一句雅思例句，配英美发音、常用搭配和易混提示。学会一个，就在你的星图上点亮一颗星。
           </p>
-          <p className="lede">它免费、开源、无需注册。代码用 MIT，词库用 CC BY 4.0，谁都可以拿去用。</p>
+          <p className="lede">词灯基于开源项目“词光（Word Atlas）”改进而来。基础背词免费，学习进度默认保存在你自己的浏览器里。</p>
           <div className="about-actions">
             <a className="btn btn-primary" href={REPO_URL} target="_blank" rel="noreferrer">
               <Github size={18} /> 在 GitHub 上查看
@@ -45,7 +45,7 @@ export function About() {
               <b>分数诚实。</b>只算第一次作答。答错的词会换个题型再见一面，但不会抬高正确率。
             </li>
             <li>
-              <b>进度只属于你。</b>没有账号，没有服务器，数据存在你的浏览器里，随时能导出。
+              <b>进度属于你。</b>进度默认存在你的浏览器里，随时能导出备份。
             </li>
           </ul>
         </section>
@@ -92,7 +92,19 @@ export function About() {
           <p className="muted">
             释义、例句、搭配和提示由大语言模型按统一的词典规范重新撰写；插画由图像模型按统一画风逐词绘制；发音和朗读由 ElevenLabs 合成（英音 Alice，美音 Sarah）。所有内容都经过结构和一致性的自动校验，但没有逐条人工审校。看到错的地方，欢迎在 GitHub 提 Issue，或者直接改数据提 PR。
           </p>
-          <p className="muted">词光不是官方雅思词表，也不承诺提分。它只想把背单词这件事，做得好看一点、扎实一点。</p>
+          <p className="muted">词灯不是官方雅思词表，与雅思（IELTS）考试主办方无关，也不承诺提分。它只想把背单词这件事，做得好看一点、扎实一点。</p>
+        </section>
+
+        <section className="panel">
+          <h3 className="eyebrow">开源与署名</h3>
+          <p className="muted">
+            词灯基于 Word Atlas（词光）项目修改而成。词库文本、插画与词条录音版权归 Word Atlas contributors，按{" "}
+            <a className="link" href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>{" "}
+            授权，词灯对界面、功能和部分内容做了修改；应用代码按 MIT 授权。
+          </p>
+          <a className="link" href={UPSTREAM_URL} target="_blank" rel="noreferrer">
+            原项目：Word Atlas · 词光 <ArrowUpRight size={14} />
+          </a>
         </section>
 
         <section className="panel">
