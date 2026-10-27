@@ -2,14 +2,14 @@
   "brand": "WordLamp",
   "brandZh": "词灯",
   "domain": "wordlamp.net",
-  "legalName": "[YOUR LEGAL NAME]",
+  "legalName": "你的法定姓名",
   "supportEmail": "support@wordlamp.net",
-  "governingLaw": "the laws of the State of [YOUR STATE], United States",
-  "governingLawZh": "美国[你所在的州]州法律",
+  "governingLaw": "the laws of the United States and of the state in which the operator resides",
+  "governingLawZh": "美国法律及运营方居住地所在州的法律",
   "effectiveDate": "2026-10-27",
   "freeDaily": 2,
   "proDaily": 15,
   "proMonthly": "9.99",
   "proYearly": "69",
-  "refundDays": 14
+  "refundDays": 30
 }

@@ -6,10 +6,11 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const cfg = JSON.parse(fs.readFileSync(path.join(root, "site.config.json"), "utf8"));
 const layout = fs.readFileSync(path.join(root, "legal", "_layout.html"), "utf8");
 
+const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const fill = (s) =>
   s.replace(/\{\{(\w+)\}\}/g, (m, k) => {
     if (!(k in cfg)) throw new Error(`Unknown placeholder ${m} in legal templates`);
-    return String(cfg[k]);
+    return esc(cfg[k]);
   });
 
 let rendered = 0;

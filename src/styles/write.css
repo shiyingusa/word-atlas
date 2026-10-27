@@ -13,7 +13,7 @@
 .wr-spin { animation: wr-rot 1s linear infinite; }
 @keyframes wr-rot { to { transform: rotate(360deg); } }
 .wr-hero { display: flex; gap: 22px; align-items: center; margin: 8px 0 22px; }
-.wr-band { flex: none; width: 112px; height: 112px; border-radius: 50%; display: grid; place-content: center; text-align: center; background: var(--ochre-soft); color: #5a4010; }
+.wr-band { flex: none; width: 112px; height: 112px; border-radius: 50%; display: grid; place-content: center; text-align: center; background: #f3d98f; color: #2a1c02; }
 .wr-band b { font-family: var(--serif); font-size: 40px; line-height: 1; }
 .wr-band span { font-size: 12px; margin-top: 4px; }
 .wr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 14px; }
@@ -32,3 +32,4 @@
 .wr-to { color: var(--sage-ink); font-weight: 600; }
 .wr-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
 @media (max-width: 640px) { .wr-grid { grid-template-columns: 1fr; } .wr-hero { flex-direction: column; align-items: flex-start; } }
+.wr-hint { margin: 6px 2px 0; font-size: 13px; color: var(--ochre); }

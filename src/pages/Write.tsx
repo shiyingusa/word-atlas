@@ -133,6 +133,7 @@ export function Write() {
       <p className={`wr-count ${words > 0 && !lengthOk ? "is-bad" : ""}`}>
         {words} 词 · 需要 {MIN_WORDS}–{MAX_WORDS} 词
       </p>
+      {lengthOk && words < 250 && <p className="wr-hint">雅思大作文建议不少于 250 词。字数不足会拉低“任务回应”的得分，批改结果会反映这一点。</p>}
 
       <label className="wr-consent">
         <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
