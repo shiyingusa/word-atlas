@@ -94,7 +94,7 @@ test("a key is active only while its subscription record points at it", async ()
 
   // unknown keys and orphaned keys are rejected
   assert.equal(await lookupLicense(kv, "WL-AAAAA-AAAAA-AAAAA-AAAAA"), null);
-  kv.data.set("sub:sub_1", JSON.stringify({ ...JSON.parse(kv.data.get("sub:sub_1")!), key: "WL-OTHER" }));
+  kv.data.set("own:sub_1", JSON.stringify({ ...JSON.parse(kv.data.get("own:sub_1")!), key: "WL-OTHER" }));
   assert.equal(await lookupLicense(kv, key), null, "a key that lost its subscription link is not valid");
 });
 
@@ -175,4 +175,36 @@ test("signature failures say why, and pasted secrets are cleaned", async () => {
   assert.equal(cleanSecret(" 'pdl_ntfset_abc' \r\n"), "pdl_ntfset_abc");
   assert.equal(cleanSecret(undefined), "");
   assert.equal(await checkPaddleSignature(body, sig("pdl_ntfset_abc"), cleanSecret("pdl_ntfset_abc \n"), now).then((r) => r.ok), true);
+});
+
+test("each stored record has one writer, so a webhook can never wipe a freshly issued key", async () => {
+  const written: string[] = [];
+  const base = fakeKV();
+  const spy: KVLike = { get: base.get, put: async (k, v, o) => { written.push(k); return base.put(k, v, o); } };
+  const t0 = Date.parse("2026-10-27T10:00:00Z");
+
+  await claimLicense(spy, { subId: "sub_7", customer: "ctm_7", email: "e@x.y", status: "active", ends: null, now: t0, random: bytes(11) });
+  assert.deepEqual(written.map((k) => k.split(":")[0]).sort(), ["lic", "own"], "the claim writes only its own records");
+  written.length = 0;
+  await applySubscriptionUpdate(spy, { subId: "sub_7", status: "active", ends: null, customer: "ctm_7", at: t0 + 1 });
+  assert.deepEqual(written.map((k) => k.split(":")[0]), ["st"], "a webhook writes only the status record");
+});
+
+test("claim and several webhooks racing in any order always leave a valid key", async () => {
+  for (let round = 0; round < 25; round++) {
+    const base = fakeKV();
+    const lag = () => new Promise((r) => setTimeout(r, Math.floor(Math.random() * 6)));
+    // reads may be stale and writes may land late: the nastiest realistic KV
+    const kv: KVLike = {
+      get: async (k) => { await lag(); return base.get(k); },
+      put: async (k, v, o) => { await lag(); return base.put(k, v, o); },
+    };
+    const t0 = Date.parse("2026-10-27T10:00:00Z");
+    const claimP = claimLicense(kv, { subId: "sub_r", customer: "c", email: "", status: "active", ends: "2026-11-27T10:00:00Z", now: t0 + 500, random: bytes(round) });
+    const hooks = ["subscription.created", "subscription.activated", "subscription.updated"].map((_, i) => applySubscriptionUpdate(kv, { subId: "sub_r", status: "active", ends: "2026-11-27T10:00:00Z", customer: "c", at: t0 + i * 100 }));
+    const [claim] = await Promise.all([claimP, ...hooks]);
+    assert.ok(claim.ok);
+    const state = await lookupLicense(base, claim.ok ? claim.key : "");
+    assert.equal(state?.active, true, `round ${round}: the key must stay valid and active`);
+  }
 });

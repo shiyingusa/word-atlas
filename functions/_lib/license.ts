@@ -1,8 +1,11 @@
 /**
  * License keys for Pro subscribers. A buyer completes a Paddle checkout, the page claims a
  * license key for that transaction, and Paddle webhooks keep the subscription status current.
- * KV layout:  lic:<KEY> -> { sub, created }      sub:<subscription id> -> SubRecord
- * The subscription record is the source of truth for whether a key is active.
+ * KV layout (every key has exactly ONE writer, because KV has no transactions and reads can be stale):
+ *   lic:<KEY>   -> { sub, created }                    written by the claim only
+ *   own:<sub>   -> OwnRecord (key, email, first status)  written by the claim only
+ *   st:<sub>    -> StateRecord (current status)         written by Paddle webhooks and re-checks only
+ * A key is valid when lic -> own agree; whether it is active comes from st (or the first status if st is absent).
  */
 import type { KVLike } from "./core";
 
@@ -16,16 +19,21 @@ export const GRACE_MS = 3 * 24 * 3600 * 1000;
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 symbols, no 0/O/1/I
 const KEY_RE = /^WL-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}(?:-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}){3}$/;
 
-export interface SubRecord {
+export interface OwnRecord {
   key: string;
+  claimedAt: number;
+  email: string;
+  customer: string;
+  status0: string;
+  ends0: string | null;
+}
+export interface StateRecord {
   status: string;
   ends: string | null;
   customer: string;
-  email: string;
-  claimedAt: number;
   updatedAt: number;
   /** When the status was last confirmed (webhook or direct check with Paddle). */
-  checkedAt?: number;
+  checkedAt: number;
 }
 export interface LicRecord {
   sub: string;
@@ -138,21 +146,12 @@ async function readJson<T>(kv: KVLike, key: string): Promise<T | null> {
   }
 }
 
-/** Older events never overwrite newer state (webhooks can arrive out of order). */
+/** Older events never overwrite newer state (webhooks can arrive out of order). Writes only st:<sub>. */
 export async function applySubscriptionUpdate(kv: KVLike, u: SubscriptionUpdate): Promise<"stale" | "applied"> {
-  const cur = await readJson<SubRecord>(kv, `sub:${u.subId}`);
+  const cur = await readJson<StateRecord>(kv, `st:${u.subId}`);
   if (cur && cur.updatedAt > u.at) return "stale";
-  const next: SubRecord = {
-    key: cur?.key ?? "",
-    status: u.status,
-    ends: u.ends,
-    customer: u.customer || cur?.customer || "",
-    email: cur?.email ?? "",
-    claimedAt: cur?.claimedAt ?? 0,
-    updatedAt: u.at,
-    checkedAt: u.at,
-  };
-  await kv.put(`sub:${u.subId}`, JSON.stringify(next));
+  const next: StateRecord = { status: u.status, ends: u.ends, customer: u.customer || cur?.customer || "", updatedAt: u.at, checkedAt: u.at };
+  await kv.put(`st:${u.subId}`, JSON.stringify(next));
   return "applied";
 }
 
@@ -169,18 +168,22 @@ export interface ClaimInput {
 }
 export type ClaimResult = { ok: true; key: string; status: string; ends: string | null; reused: boolean } | { ok: false; code: "already_claimed" };
 
+/** Writes only lic:<KEY> and own:<sub>; never touches the status record. */
 export async function claimLicense(kv: KVLike, i: ClaimInput): Promise<ClaimResult> {
-  const cur = await readJson<SubRecord>(kv, `sub:${i.subId}`);
-  if (cur?.key) {
+  const cur = await readJson<OwnRecord>(kv, `own:${i.subId}`);
+  if (cur) {
     // The same browser may retry right after paying; anyone else holding the transaction id is too late.
-    if (i.now - cur.claimedAt <= CLAIM_RETRY_MS) return { ok: true, key: cur.key, status: cur.status, ends: cur.ends, reused: true };
+    if (i.now - cur.claimedAt <= CLAIM_RETRY_MS) {
+      const st = await readJson<StateRecord>(kv, `st:${i.subId}`);
+      return { ok: true, key: cur.key, status: st?.status ?? cur.status0, ends: st ? st.ends : cur.ends0, reused: true };
+    }
     return { ok: false, code: "already_claimed" };
   }
   const key = generateKey(i.random);
-  const sub: SubRecord = { key, status: i.status, ends: i.ends, customer: i.customer, email: i.email, claimedAt: i.now, updatedAt: i.now, checkedAt: i.now };
+  const own: OwnRecord = { key, claimedAt: i.now, email: i.email, customer: i.customer, status0: i.status, ends0: i.ends };
   const lic: LicRecord = { sub: i.subId, created: i.now };
   await kv.put(`lic:${key}`, JSON.stringify(lic));
-  await kv.put(`sub:${i.subId}`, JSON.stringify(sub));
+  await kv.put(`own:${i.subId}`, JSON.stringify(own));
   return { ok: true, key, status: i.status, ends: i.ends, reused: false };
 }
 
@@ -190,13 +193,9 @@ export interface LicenseState {
   ends: string | null;
 }
 
-/** A key is valid only while its subscription record points back at it. */
+/** Without Paddle re-checks and without the grace rule: used where only the stored state matters. */
 export async function lookupLicense(kv: KVLike, key: string): Promise<LicenseState | null> {
-  const lic = await readJson<LicRecord>(kv, `lic:${key}`);
-  if (!lic) return null;
-  const sub = await readJson<SubRecord>(kv, `sub:${lic.sub}`);
-  if (!sub || sub.key !== key) return null;
-  return { active: isActiveStatus(sub.status), status: sub.status, ends: sub.ends };
+  return lookupLicenseFresh(kv, key, { now: 0 });
 }
 
 export interface RemoteSub {
@@ -214,21 +213,22 @@ export type FetchSub = (subId: string) => Promise<RemoteSub | null>;
 export async function lookupLicenseFresh(kv: KVLike, key: string, opts: { now: number; fetchSub?: FetchSub }): Promise<LicenseState | null> {
   const lic = await readJson<LicRecord>(kv, `lic:${key}`);
   if (!lic) return null;
-  let sub = await readJson<SubRecord>(kv, `sub:${lic.sub}`);
-  if (!sub || sub.key !== key) return null;
+  const own = await readJson<OwnRecord>(kv, `own:${lic.sub}`);
+  if (!own || own.key !== key) return null;
+  let st = (await readJson<StateRecord>(kv, `st:${lic.sub}`)) ?? { status: own.status0, ends: own.ends0, customer: own.customer, updatedAt: own.claimedAt, checkedAt: own.claimedAt };
 
   let confirmed = false;
-  if (opts.fetchSub && opts.now - (sub.checkedAt ?? sub.updatedAt) > RECHECK_MS) {
+  if (opts.fetchSub && opts.now - st.checkedAt > RECHECK_MS) {
     const remote = await opts.fetchSub(lic.sub);
     if (remote) {
-      sub = { ...sub, status: remote.status, ends: remote.ends, customer: remote.customer || sub.customer, updatedAt: Math.max(sub.updatedAt, opts.now), checkedAt: opts.now };
-      await kv.put(`sub:${lic.sub}`, JSON.stringify(sub));
+      st = { status: remote.status, ends: remote.ends, customer: remote.customer || st.customer, updatedAt: Math.max(st.updatedAt, opts.now), checkedAt: opts.now };
+      await kv.put(`st:${lic.sub}`, JSON.stringify(st));
       confirmed = true;
     }
   }
-  let active = isActiveStatus(sub.status);
-  if (active && !confirmed && sub.ends && Date.parse(sub.ends) + GRACE_MS < opts.now) active = false;
-  return { active, status: sub.status, ends: sub.ends };
+  let active = isActiveStatus(st.status);
+  if (active && !confirmed && st.ends && Date.parse(st.ends) + GRACE_MS < opts.now) active = false;
+  return { active, status: st.status, ends: st.ends };
 }
 
 /* ---------- small helpers shared by the endpoints ---------- */

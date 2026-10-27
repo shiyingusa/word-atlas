@@ -140,9 +140,9 @@ test("lost webhook: the status endpoint and grading notice a cancellation by ask
   assert.equal((await run(status, post("/api/license/status", { key }), env)).body.active, true);
 
   // 7 hours pass, the cancellation webhook never arrived, but Paddle now says canceled
-  const rec = JSON.parse(kv.data.get(`sub:${SUB}`)!);
+  const rec = JSON.parse(kv.data.get(`own:${SUB}`)!);
   const back = 7 * 3600 * 1000;
-  kv.data.set(`sub:${SUB}`, JSON.stringify({ ...rec, checkedAt: rec.checkedAt - back, updatedAt: rec.updatedAt - back }));
+  kv.data.set(`own:${SUB}`, JSON.stringify({ ...rec, claimedAt: rec.claimedAt - back }));
   mockNetwork({ subStatus: "canceled" });
 
   const r = await run(status, post("/api/license/status", { key }), env);

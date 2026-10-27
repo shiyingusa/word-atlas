@@ -89,8 +89,10 @@ export function Write() {
       if (license) {
         const r = await postJson<StatusReply>("/api/license/status", { key: license });
         if (!live) return;
-        if (r.ok) setPlan({ active: r.active, renewsAt: r.renewsAt });
-        else if (r.code === "invalid") setLicMsg("本机保存的许可证不正确或已失效，目前按免费版使用。");
+        if (r.ok) {
+          setPlan({ active: r.active, renewsAt: r.renewsAt });
+          if (!r.active) setLicMsg("你的 Pro 订阅已经结束或暂停，目前按免费版使用。续订后可继续使用。");
+        } else if (r.code === "invalid") setLicMsg("本机保存的许可证不正确或已失效，目前按免费版使用。");
       }
     })();
     return () => {
