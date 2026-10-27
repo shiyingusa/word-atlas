@@ -52,13 +52,18 @@
 </article>
 <script>
 (function () {
-  var CFG = { env: "{{paddleEnv}}", token: "{{paddleToken}}", monthly: "{{priceMonthlyId}}", yearly: "{{priceYearlyId}}" };
+  var CFG = { env: "{{paddleEnv}}", token: "{{paddleToken}}", monthly: "{{priceMonthlyId}}", yearly: "{{priceYearlyId}}", open: "{{proAvailable}}" === "true" };
   var test = CFG.env === "sandbox";
-  // Test mode is only visible to people who add #test to the address, so visitors never see it.
-  if (!(CFG.token && CFG.monthly && CFG.yearly && (!test || location.hash === "#test"))) return;
+  // The buy buttons are public only once Pro is launched (proAvailable). Until then they appear only for
+  // someone who adds #test to the address: a private preview, so the owner can try a real purchase first.
+  if (!(CFG.token && CFG.monthly && CFG.yearly && (CFG.open || location.hash === "#test"))) return;
   var $ = function (id) { return document.getElementById(id); };
   $("wl-buy").hidden = false;
   if (test) $("wl-test").hidden = false;
+  else if (!CFG.open) {
+    $("wl-test").textContent = "PRIVATE PREVIEW — this is a REAL purchase and will charge a real card. Only people who open this link can see these buttons.";
+    $("wl-test").hidden = false;
+  }
   ["wl-notice", "wl-soon"].forEach(function (id) { if ($(id)) $(id).hidden = true; });
   var msg = function (t) { $("wl-msg").textContent = t; $("wl-msg").hidden = !t; };
 
