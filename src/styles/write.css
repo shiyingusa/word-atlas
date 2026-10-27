@@ -1,0 +1,34 @@
+.wr { max-width: 760px; }
+.wr .display { margin: 6px 0 10px; }
+.wr-label { display: block; margin: 22px 0 8px; font-weight: 600; color: var(--ink-2); }
+.wr-input { width: 100%; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--card); color: var(--ink); font: inherit; line-height: 1.6; resize: vertical; }
+.wr-input:focus { outline: 2px solid var(--ochre); outline-offset: 1px; }
+.wr-essay { font-family: var(--serif); font-size: 17px; min-height: 280px; }
+.wr-count { margin: 8px 2px 0; color: var(--ink-3); font-size: 14px; }
+.wr-count.is-bad { color: var(--terra-ink); }
+.wr-consent { display: flex; gap: 10px; align-items: flex-start; margin: 18px 0; font-size: 14px; color: var(--ink-2); line-height: 1.55; }
+.wr-consent input { margin-top: 3px; }
+.wr-consent svg { vertical-align: -2px; color: var(--sage-ink); }
+.wr-note { margin-top: 12px; font-size: 13px; }
+.wr-spin { animation: wr-rot 1s linear infinite; }
+@keyframes wr-rot { to { transform: rotate(360deg); } }
+.wr-hero { display: flex; gap: 22px; align-items: center; margin: 8px 0 22px; }
+.wr-band { flex: none; width: 112px; height: 112px; border-radius: 50%; display: grid; place-content: center; text-align: center; background: var(--ochre-soft); color: #5a4010; }
+.wr-band b { font-family: var(--serif); font-size: 40px; line-height: 1; }
+.wr-band span { font-size: 12px; margin-top: 4px; }
+.wr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 14px; }
+.wr-card { padding: 16px 18px; }
+.wr-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+.wr-card-head h3 { margin: 0; font-size: 16px; }
+.wr-card-head b { font-family: var(--serif); font-size: 24px; color: var(--terra-ink); }
+.wr-card small { color: var(--ink-3); }
+.wr-card p { margin: 10px 0 0; line-height: 1.6; color: var(--ink-2); }
+.wr-block { padding: 18px 20px; margin-bottom: 14px; }
+.wr-block ul { margin: 8px 0 0; padding-left: 20px; line-height: 1.7; }
+.wr-fix { padding: 12px 0; border-top: 1px solid var(--line); }
+.wr-fix:first-of-type { border-top: 0; }
+.wr-fix p { margin: 4px 0; }
+.wr-from { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--terra); }
+.wr-to { color: var(--sage-ink); font-weight: 600; }
+.wr-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+@media (max-width: 640px) { .wr-grid { grid-template-columns: 1fr; } .wr-hero { flex-direction: column; align-items: flex-start; } }

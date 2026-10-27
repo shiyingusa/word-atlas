@@ -9,3 +9,7 @@ output/
 .DS_Store
 .playwright-cli/
 *.tsbuildinfo
+public/pricing.html
+public/terms.html
+public/privacy.html
+public/refund.html
