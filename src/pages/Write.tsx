@@ -68,23 +68,32 @@ export function Write() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [licInput, setLicInput] = useState("");
   const [licBusy, setLicBusy] = useState(false);
+  const [txnInput, setTxnInput] = useState("");
+  const [showKey, setShowKey] = useState(false);
   const [licMsg, setLicMsg] = useState<string | null>(null);
   const isPro = !!(license && plan?.active);
 
   useEffect(() => {
     let live = true;
     (async () => {
-      // Paid but the key never arrived (closed tab, bad connection)? Retry the claim quietly.
+      // Paid but the key never arrived (closed tab, bad connection)? Claim it now, even if an older key is stored.
       const pending = ls.get(LS_PENDING);
-      if (!license && pending) {
+      if (pending) {
         const r = await postJson<ClaimReply>("/api/license/claim", { transactionId: pending });
-        if (live && r.ok) {
+        if (!live) return;
+        if (r.ok) {
           ls.set(LS_KEY, r.key);
           ls.del(LS_PENDING);
           setLicense(r.key);
           setPlan({ active: r.active, renewsAt: r.renewsAt });
+          setLicMsg("已为你领取并激活这次购买的 Pro 许可证。");
+          return;
         }
-        return;
+        // These can never succeed by retrying: stop trying and say why.
+        if (r.code === "already_claimed" || r.code === "bad_request") {
+          ls.del(LS_PENDING);
+          setLicMsg(r.error);
+        }
       }
       if (license) {
         const r = await postJson<StatusReply>("/api/license/status", { key: license });
@@ -99,6 +108,23 @@ export function Write() {
       live = false;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Paid but no key on this device: claim it again from the order number on the receipt. */
+  async function recover() {
+    const id = txnInput.trim().toLowerCase();
+    if (!/^txn_[a-z0-9]{20,40}$/.test(id)) return setLicMsg("订单编号格式不对：应该以 txn_ 开头，后面是 26 位左右的字母和数字。");
+    setLicBusy(true);
+    setLicMsg(null);
+    const r = await postJson<ClaimReply>("/api/license/claim", { transactionId: id });
+    setLicBusy(false);
+    if (!r.ok) return setLicMsg(r.error);
+    ls.set(LS_KEY, r.key);
+    ls.del(LS_PENDING);
+    setLicense(r.key);
+    setPlan({ active: r.active, renewsAt: r.renewsAt });
+    setTxnInput("");
+    setLicMsg(r.active ? "找回成功，Pro 已激活。请把许可证密钥保存好（在 Pro 面板里可以看到）。" : "找回成功，但这笔订阅已经结束或暂停。");
+  }
 
   async function activate() {
     setLicBusy(true);
@@ -168,6 +194,25 @@ export function Write() {
           <p className="muted">
             取消订阅或申请退款，请看<a href="/refund.html" target="_blank" rel="noreferrer">退款政策</a>，或发邮件到 support@wordlamp.net。
           </p>
+          <p className="muted">
+            要在别的设备上使用 Pro，需要这把许可证密钥：{" "}
+            <button className="link" onClick={() => setShowKey((v) => !v)}>
+              {showKey ? "隐藏密钥" : "查看我的密钥"}
+            </button>
+          </p>
+          {showKey && license && (
+            <p className="wr-key">
+              <code>{license}</code>{" "}
+              <button
+                className="link"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(license).then(() => setLicMsg("密钥已复制。请保存好，不要发给别人。"), () => setLicMsg("复制失败，请手动选中密钥复制。"));
+                }}
+              >
+                复制
+              </button>
+            </p>
+          )}
         </>
       ) : (
         <>
@@ -180,6 +225,13 @@ export function Write() {
               <input value={licInput} onChange={(e) => setLicInput(e.target.value)} placeholder="WL-XXXXX-XXXXX-XXXXX-XXXXX" aria-label="许可证密钥" autoCapitalize="characters" spellCheck={false} />
               <button className="btn btn-primary" disabled={licBusy || licInput.trim().length < 10} onClick={activate}>
                 {licBusy ? "检查中…" : "激活"}
+              </button>
+            </div>
+            <p className="muted wr-recover-note">付款成功但没拿到密钥？在收据或支付后台里找到订单编号（txn_ 开头），在这里找回：</p>
+            <div className="wr-lic">
+              <input value={txnInput} onChange={(e) => setTxnInput(e.target.value)} placeholder="txn_01abc…" aria-label="订单编号" spellCheck={false} />
+              <button className="btn" disabled={licBusy || txnInput.trim().length < 20} onClick={recover}>
+                {licBusy ? "找回中…" : "找回"}
               </button>
             </div>
           </details>
