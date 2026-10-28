@@ -239,11 +239,31 @@ export async function sha256Hex(s: string): Promise<string> {
 }
 
 /** Counts a use against a limit; returns false when the limit is already reached. */
+/** Has this counter already reached its limit? Read only. A storage hiccup never locks anyone out. */
+export async function isLimited(kv: KVLike, key: string, limit: number): Promise<boolean> {
+  try {
+    return (Number.parseInt((await kv.get(key)) ?? "0", 10) || 0) >= limit;
+  } catch (e) {
+    console.error("kv read failed; not limiting", key.split(":")[0], e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
+/**
+ * Counts one attempt and says whether it is allowed. These counters only protect against abuse, so when the
+ * storage refuses a write (for example the free plan's daily write limit) the request is let through:
+ * a rate limit must never stand between a paying customer and their license.
+ */
 export async function bump(kv: KVLike, key: string, limit: number, ttlSeconds = 172800): Promise<boolean> {
-  const n = Number.parseInt((await kv.get(key)) ?? "0", 10) || 0;
-  if (n >= limit) return false;
-  await kv.put(key, String(n + 1), { expirationTtl: ttlSeconds });
-  return true;
+  try {
+    const n = Number.parseInt((await kv.get(key)) ?? "0", 10) || 0;
+    if (n >= limit) return false;
+    await kv.put(key, String(n + 1), { expirationTtl: ttlSeconds });
+    return true;
+  } catch (e) {
+    console.error("kv counter failed; letting the request through", key.split(":")[0], e instanceof Error ? e.message : e);
+    return true;
+  }
 }
 
 export class PaddleError extends Error {

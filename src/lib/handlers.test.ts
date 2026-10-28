@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { FREE_DAILY, PRO_DAILY } from "../../functions/_lib/core";
+import { sha256Hex } from "../../functions/_lib/license";
+import { dayKey } from "../../functions/_lib/core";
 import { createHmac } from "node:crypto";
 import { afterEach, test } from "node:test";
 import type { KVLike } from "../../functions/_lib/core";
@@ -218,4 +221,56 @@ test("the health check says whether the API key matches the Paddle environment, 
   assert.deepEqual([r.body.paddle.apiKeyKind, r.body.paddle.apiKeyMatchesEnv], ["unknown", false]);
   r = await health({ QUOTA: kv });
   assert.deepEqual([r.body.paddle.apiKeyKind, r.body.paddle.apiKeyMatchesEnv], [null, false]);
+});
+
+test("opening the writing page with a valid key writes nothing; only wrong keys are counted and limited", async () => {
+  const base = fakeKV();
+  mockNetwork();
+  const writes: string[] = [];
+  const kv = { get: base.get, put: async (k: string, v: string, o?: { expirationTtl?: number }) => { writes.push(k); return base.put(k, v, o); }, data: base.data };
+  const env = { PADDLE_API_KEY: "k", PADDLE_ENV: "sandbox", QUOTA: kv };
+  const key = (await run(claim, post("/api/license/claim", { transactionId: TXN }), env)).body.key as string;
+  writes.length = 0;
+  for (let i = 0; i < 3; i++) assert.equal((await run(status, post("/api/license/status", { key }), env)).body.active, true);
+  assert.equal(writes.length, 0, "valid lookups cost no storage writes");
+
+  const wrong = await run(status, post("/api/license/status", { key: "WL-AAAAA-AAAAA-AAAAA-AAAAA" }), env);
+  assert.equal(wrong.status, 404);
+  assert.equal(writes.filter((k) => k.startsWith("rl:status:")).length, 1, "a wrong guess is counted once");
+
+  const who = await sha256Hex("1.2.3.4|wordlamp");
+  base.data.set(`rl:status:${dayKey()}:${who}`, "200");
+  writes.length = 0;
+  const limited = await run(status, post("/api/license/status", { key }), env);
+  assert.deepEqual([limited.status, limited.body.code], [429, "rate_limited"]);
+  assert.equal(writes.length, 0, "being limited writes nothing either");
+});
+
+test("when the storage refuses counter writes, payment fulfilment, the writing page and grading all still work", async () => {
+  const base = fakeKV();
+  mockNetwork();
+  let refuse = false;
+  const kv = {
+    get: base.get,
+    put: async (k: string, v: string, o?: { expirationTtl?: number }) => {
+      if (refuse && /^(u|g|rl):/.test(k)) throw new Error("KV put() limit exceeded for the day.");
+      return base.put(k, v, o);
+    },
+    data: base.data,
+  };
+  const env = { PADDLE_API_KEY: "k", PADDLE_ENV: "sandbox", QUOTA: kv, DEEPSEEK_API_KEY: "sk" };
+  refuse = true;
+
+  const claimed = await run(claim, post("/api/license/claim", { transactionId: TXN }), env);
+  assert.equal(claimed.status, 200, "a paying customer still gets the key");
+  const key = claimed.body.key as string;
+  assert.match(String(key), /^WL-/);
+
+  const wrong = await run(status, post("/api/license/status", { key: "WL-AAAAA-AAAAA-AAAAA-AAAAA" }), env);
+  assert.deepEqual([wrong.status, wrong.body.code], [404, "invalid"], "a clear answer, not a server error");
+
+  const pro = await run(grade, post("/api/grade", { essay: words(150), consent: true, license: key }), env);
+  assert.deepEqual([pro.status, pro.body.plan, pro.body.remaining], [200, "pro", PRO_DAILY - 1], "the finished grading is returned");
+  const free = await run(grade, post("/api/grade", { essay: words(150), consent: true }), env);
+  assert.deepEqual([free.status, free.body.plan, free.body.remaining], [200, "free", FREE_DAILY - 1]);
 });

@@ -81,7 +81,13 @@ export const onRequest = async (context: { request: Request; env: Env }) => {
   const user = pro ? await sha256Hex(`lic|${licenseKey}|${salt}`) : await sha256Hex(`${ip}|${salt}`);
   const globalLimit = pro ? Number.POSITIVE_INFINITY : Number.parseInt(env.GLOBAL_DAILY_LIMIT ?? "", 10) || GLOBAL_DAILY_DEFAULT;
 
-  const quota = await readQuota(env.QUOTA, user, day, limit, globalLimit);
+  let quota: Awaited<ReturnType<typeof readQuota>>;
+  try {
+    quota = await readQuota(env.QUOTA, user, day, limit, globalLimit);
+  } catch (e) {
+    console.error("quota read failed; allowing this grading", e instanceof Error ? e.message : e);
+    quota = { allowed: true, used: 0 };
+  }
   if (!quota.allowed) {
     return quota.reason === "global"
       ? fail(429, "今天的免费批改名额已被用完，请明天再来。", "global_limit")
@@ -100,6 +106,13 @@ export const onRequest = async (context: { request: Request; env: Env }) => {
   }
   if (!grade) return fail(502, "AI 这次没有给出有效结果，请再试一次。这次不会扣你的次数。", "bad_output");
 
-  const used = await recordQuota(env.QUOTA, user, day, !pro);
+  // The model has already been paid for: if the counter cannot be saved, still return the result.
+  let used: number;
+  try {
+    used = await recordQuota(env.QUOTA, user, day, !pro);
+  } catch (e) {
+    console.error("quota write failed after a successful grading", e instanceof Error ? e.message : e);
+    used = quota.used + 1;
+  }
   return json({ ok: true, grade, words: v.words, remaining: Math.max(0, limit - used), limit, plan: pro ? "pro" : "free", license: licenseState });
 };

@@ -1,7 +1,7 @@
 /** POST /api/license/status { key } — is this license key valid and active? Binding: QUOTA (KV). */
 import { dayKey } from "../../_lib/core";
 import type { KVLike } from "../../_lib/core";
-import { bump, lookupLicenseFresh, makeFetchSub, normalizeKey, sha256Hex } from "../../_lib/license";
+import { bump, isLimited, lookupLicenseFresh, makeFetchSub, normalizeKey, sha256Hex } from "../../_lib/license";
 
 interface Env {
   PADDLE_API_KEY?: string;
@@ -30,11 +30,15 @@ export const onRequest = async ({ request, env }: { request: Request; env: Env }
 
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
   const who = await sha256Hex(`${ip}|${env.IP_SALT ?? "wordlamp"}`);
-  // Guessing keys is pointless (100 bits) but keep it cheap to abuse anyway.
-  if (!(await bump(env.QUOTA, `rl:status:${dayKey()}:${who}`, 200))) return json({ ok: false, error: "尝试次数太多，请稍后再试。", code: "rate_limited" }, 429);
+  // Guessing keys is pointless (100 bits), so only WRONG keys are counted: opening the page with a valid key writes nothing.
+  const rl = `rl:status:${dayKey()}:${who}`;
+  if (await isLimited(env.QUOTA, rl, 200)) return json({ ok: false, error: "尝试次数太多，请稍后再试。", code: "rate_limited" }, 429);
 
   const key = normalizeKey(input);
   const state = key ? await lookupLicenseFresh(env.QUOTA, key, { now: Date.now(), fetchSub: makeFetchSub(env) }) : null;
-  if (!key || !state) return json({ ok: false, error: "这个许可证密钥不正确。请检查是否完整复制。", code: "invalid" }, 404);
+  if (!key || !state) {
+    await bump(env.QUOTA, rl, 200);
+    return json({ ok: false, error: "这个许可证密钥不正确。请检查是否完整复制。", code: "invalid" }, 404);
+  }
   return json({ ok: true, key, active: state.active, status: state.status, renewsAt: state.ends });
 };
