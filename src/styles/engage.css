@@ -28,3 +28,19 @@
 .wr-recover-note { margin: 14px 0 0; font-size: 13px; }
 .wr-lic input { text-transform: none; }
 .wr-key code { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; word-break: break-all; }
+/* readable by screen readers, invisible on screen */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* On short screens the first-run button stays in view instead of hiding below the fold. */
+@media (max-height: 760px) {
+  .onboard-body .btn-xl { position: sticky; bottom: 10px; z-index: 2; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
+}
+/* On 320px screens the daily-goal selector needed 318px and stretched the whole first-run card past the screen. */
+.onboard fieldset, .onboard-body > * { min-width: 0; }
+@media (max-width: 359px) {
+  .onboard .segmented button { padding: 0 8px; font-size: 13px; }
+}
+/* Atlas status filter: on phones it fills the row and never widens the page (it used to force 358px on a 320px screen). */
+@media (max-width: 420px) {
+  .filters-row .segmented { display: flex; flex: 1 1 100%; min-width: 0; contain: inline-size; }
+  .filters-row .segmented button { flex: 1 0 auto; padding: 0 10px; }
+}

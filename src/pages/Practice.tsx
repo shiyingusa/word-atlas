@@ -1,4 +1,5 @@
 import { Brain, Headphones, Keyboard, RotateCcw, Type } from "lucide-react";
+import { practiceCountLine } from "../lib/copy";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { prefetch, useAtlas } from "../atlas/context";
 import type { Entry } from "../atlas/types";
@@ -84,7 +85,7 @@ export function Practice() {
             {pool.length
               ? source === "path"
                 ? "从学习路线的前 400 个词里随机抽 10 个。"
-                : `可练 ${pool.length} 个词，每轮随机 10 个。`
+                : practiceCountLine(pool.length)
               : "这里还没有词，先去学几个，或换个来源。"}
           </p>
           <button className="btn btn-primary btn-xl" onClick={start} disabled={!pool.length}>
@@ -223,6 +224,11 @@ function TypingRound({ mode, entries, onExit, onAgain }: { mode: Mode; entries: 
             )}
             {e.ex[0].zh}
           </p>
+        )}
+        {(mode === "word" || mode === "sentence") && (
+          <span className="sr-only" lang="en">
+            {target}
+          </span>
         )}
         <p className={`typing-text ${mode === "word" || mode === "recall" ? "is-word" : ""} ${hidden ? "is-hidden" : ""}`} lang="en" aria-hidden="true">
           {chars.map((ch, k) => {

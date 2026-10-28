@@ -68,6 +68,8 @@ export function Write() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [licInput, setLicInput] = useState("");
   const [licBusy, setLicBusy] = useState(false);
+  const [licAction, setLicAction] = useState<"activate" | "recover" | null>(null);
+  const [errCode, setErrCode] = useState<string | null>(null);
   const [txnInput, setTxnInput] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [licMsg, setLicMsg] = useState<string | null>(null);
@@ -113,6 +115,7 @@ export function Write() {
   async function recover() {
     const id = txnInput.trim().toLowerCase();
     if (!/^txn_[a-z0-9]{20,40}$/.test(id)) return setLicMsg("订单编号格式不对：应该以 txn_ 开头，后面是 26 位左右的字母和数字。");
+    setLicAction("recover");
     setLicBusy(true);
     setLicMsg(null);
     const r = await postJson<ClaimReply>("/api/license/claim", { transactionId: id });
@@ -127,6 +130,7 @@ export function Write() {
   }
 
   async function activate() {
+    setLicAction("activate");
     setLicBusy(true);
     setLicMsg(null);
     const r = await postJson<StatusReply>("/api/license/status", { key: licInput });
@@ -153,18 +157,26 @@ export function Write() {
   async function submit() {
     setBusy(true);
     setError(null);
+    setErrCode(null);
+    // A hung request must not leave the learner staring at a spinner: give up after a minute, keep the draft.
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), 60000);
     try {
       const res = await fetch("/api/grade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ essay, question, consent, license: license ?? undefined }),
+        signal: ctl.signal,
       });
       const data = (await res.json().catch(() => null)) as
         | ({ ok: true } & GradeReply)
-        | { ok: false; error: string }
+        | { ok: false; error: string; code?: string }
         | null;
       if (!data) throw new Error("服务暂时没有响应，请稍后再试。");
-      if (!data.ok) throw new Error(data.error);
+      if (!data.ok) {
+        setErrCode(data.code ?? null);
+        throw new Error(data.error);
+      }
       if (data.license === "inactive") {
         setPlan({ active: false, renewsAt: null });
         setLicMsg("你的 Pro 订阅已经结束或暂停，这次按免费额度批改。续订后可继续使用。");
@@ -174,8 +186,10 @@ export function Write() {
       setResult({ grade: g, words: data.words, remaining: data.remaining, limit: data.limit, plan: data.plan, delta: deltaVsPrevious(history) });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "出了点问题，请稍后再试。");
+      if (e instanceof DOMException && e.name === "AbortError") setError("批改超过 1 分钟还没有结果，已经停止等待。你的作文还在输入框里，请稍后再点一次“开始批改”。");
+      else setError(e instanceof Error ? e.message : "出了点问题，请稍后再试。");
     } finally {
+      window.clearTimeout(timer);
       setBusy(false);
     }
   }
@@ -224,14 +238,14 @@ export function Write() {
             <div className="wr-lic">
               <input value={licInput} onChange={(e) => setLicInput(e.target.value)} placeholder="WL-XXXXX-XXXXX-XXXXX-XXXXX" aria-label="许可证密钥" autoCapitalize="characters" spellCheck={false} />
               <button className="btn btn-primary" disabled={licBusy || licInput.trim().length < 10} onClick={activate}>
-                {licBusy ? "检查中…" : "激活"}
+                {licBusy && licAction === "activate" ? "检查中…" : "激活"}
               </button>
             </div>
             <p className="muted wr-recover-note">付款成功但没拿到密钥？在收据或支付后台里找到订单编号（txn_ 开头），在这里找回：</p>
             <div className="wr-lic">
               <input value={txnInput} onChange={(e) => setTxnInput(e.target.value)} placeholder="txn_01abc…" aria-label="订单编号" spellCheck={false} />
               <button className="btn" disabled={licBusy || txnInput.trim().length < 20} onClick={recover}>
-                {licBusy ? "找回中…" : "找回"}
+                {licBusy && licAction === "recover" ? "找回中…" : "找回"}
               </button>
             </div>
           </details>
@@ -340,6 +354,20 @@ export function Write() {
       <textarea id="wr-e" className="wr-input wr-essay" rows={14} value={essay} onChange={(e) => setEssay(e.target.value)} placeholder="把英文作文粘贴到这里……" lang="en" />
       <p className={`wr-count ${words > 0 && !lengthOk ? "is-bad" : ""}`}>
         {words} 词 · 需要 {MIN_WORDS}–{MAX_WORDS} 词
+        {(essay || question) && (
+          <>
+            {" · "}
+            <button
+              className="link"
+              onClick={() => {
+                setEssay("");
+                setQuestion("");
+              }}
+            >
+              清空
+            </button>
+          </>
+        )}
       </p>
       {lengthOk && words < 250 && <p className="wr-hint">雅思大作文建议不少于 250 词。字数不足会拉低“任务回应”的得分，批改结果会反映这一点。</p>}
 
@@ -351,7 +379,17 @@ export function Write() {
         </span>
       </label>
 
-      {error && <p className="warn-text" role="alert">{error}</p>}
+      {error && (
+        <p className="warn-text" role="alert">
+          {error}
+          {errCode === "daily_limit" && !isPro && (
+            <>
+              {" "}
+              <a href="/pricing">了解 Pro（每天 {PRO_DAILY} 次）</a>
+            </>
+          )}
+        </p>
+      )}
 
       <button className="btn btn-primary btn-xl" disabled={busy || !consent || !lengthOk} onClick={submit}>
         {busy ? <Loader2 size={18} className="wr-spin" /> : <PenLine size={18} />} {busy ? "批改中，大约需要十几秒……" : "开始批改"}

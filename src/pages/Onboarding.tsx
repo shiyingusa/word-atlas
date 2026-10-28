@@ -26,6 +26,7 @@ export function Onboarding() {
             <br />
             等你一颗颗点亮。
           </h1>
+          <p className="muted">雅思词汇，一词一画；学完还能用 AI 批改你的作文。</p>
           <fieldset>
             <legend>你从哪里出发？</legend>
             <div className="choice-grid">

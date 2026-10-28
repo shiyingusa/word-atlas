@@ -1,4 +1,5 @@
 import { ArrowRight, Check, Lightbulb, RotateCcw, Share2, Volume2, X } from "lucide-react";
+import { summaryLine } from "../lib/copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { prefetch, useAtlas, useEntry } from "../atlas/context";
 import type { Entry, WordRef } from "../atlas/types";
@@ -391,7 +392,7 @@ function Summary({ session }: { session: ActiveSession }) {
       <div className="summary-card">
         <div className="summary-sky">
           <Galaxy mode="mini" highlight={words.map((w) => w.id)} ignite />
-          <p>今天点亮了 {words.length} 颗星</p>
+          <p>{summaryLine(session.newIds.length, words.length)}</p>
         </div>
         <p className="eyebrow">这一程结束了</p>
         <h1 className="display">{stats.accuracy >= 90 ? "漂亮的一程。" : stats.accuracy >= 60 ? "稳稳向前。" : "错过的，会再相遇。"}</h1>

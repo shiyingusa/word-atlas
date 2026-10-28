@@ -58,3 +58,16 @@ export function essaySummary(list: EssayResult[]) {
   const best = Math.max(...list.map((e) => e.overall));
   return { count: list.length, best, latest: list[list.length - 1].overall, first: list[0].overall };
 }
+
+/** Restoring a backup adds its writing history to what is already here (same timestamp = same essay). */
+export function mergeEssays(extra: unknown): EssayResult[] {
+  const seen = new Set<number>();
+  const merged = sanitizeEssays([...readEssays(), ...sanitizeEssays(extra)]).filter((e) => (seen.has(e.at) ? false : (seen.add(e.at), true)));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(merged));
+  } catch {
+    /* storage can be blocked */
+  }
+  window.dispatchEvent(new Event("wordlamp:essays"));
+  return merged;
+}

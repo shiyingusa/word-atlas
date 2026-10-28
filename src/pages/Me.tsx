@@ -1,9 +1,10 @@
 import { Download, RotateCcw, Upload } from "lucide-react";
 import { SOUND_ENABLED } from "../lib/sound";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAtlas } from "../atlas/context";
 import { isMastered } from "../store/srs";
-import { dayKey, exportBackup, importBackup, resetProgress, store, useStore, type Settings } from "../store/store";
+import { mergeEssays, readEssays } from "../lib/essays";
+import { dayKey, exportBackup, importBackup, inspectBackup, resetProgress, store, useStore, type Settings } from "../store/store";
 import { BadgePanel } from "../ui/Badges";
 import { ReminderPanel } from "../ui/Reminder";
 import { toast } from "../ui/Toast";
@@ -36,17 +37,52 @@ export function Me({ privateAvailable }: { privateAvailable: boolean }) {
   }, [progress]);
 
   const set = (patch: Partial<Settings>) => store.settings(patch);
+  const [lastBackup, setLastBackup] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("wordlamp:last-backup");
+    } catch {
+      return null;
+    }
+  });
   const download = () => {
-    const blob = new Blob([exportBackup()], { type: "application/json" });
+    const essays = readEssays();
+    // The writing history lives outside the learning record; carry it along (scores only, no essay text).
+    const data = { ...(JSON.parse(exportBackup()) as Record<string, unknown>), extras: { essays } };
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `wordlamp-backup-${dayKey()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    const now = new Date().toISOString();
+    try {
+      localStorage.setItem("wordlamp:last-backup", now);
+    } catch {
+      /* storage can be blocked */
+    }
+    setLastBackup(now);
+    toast(`已导出备份文件：${Object.keys(progress.cards).length} 个词的进度${essays.length ? `、${essays.length} 次写作记录` : ""}。请把文件保存好。`, "ok");
   };
   const restore = async (f: File) => {
     if (f.size > 30 * 1024 * 1024) return toast("文件太大，不像是学习备份。", "warn");
-    const r = importBackup(await f.text());
+    const text = await f.text();
+    const info = inspectBackup(text);
+    if (!info.ok) return toast(info.error, "warn");
+    const have = Object.keys(store.get().progress.cards).length;
+    const when = info.exported ? new Date(info.exported).toLocaleDateString("zh-CN") : "未知日期";
+    const ok = window.confirm(
+      `这个备份导出于 ${when}，包含 ${info.cards} 个词的进度。\n你现在这台设备上有 ${have} 个词的进度。\n\n恢复后，这台设备上现有的进度和设置会被备份里的内容【替换】。${info.cards < have ? "\n\n注意：备份里的词比现在少，可能是比较旧的备份。建议先点“导出备份”保存现状。" : ""}\n\n确定要恢复吗？`,
+    );
+    if (!ok) return toast("已取消，当前进度没有任何改动。", "info");
+    const r = importBackup(text);
+    if (r.ok) {
+      try {
+        const extra = (JSON.parse(text) as { extras?: { essays?: unknown } }).extras?.essays;
+        if (extra) mergeEssays(extra);
+      } catch {
+        /* the learning record is already restored */
+      }
+    }
     toast(r.ok ? `已恢复 ${r.cards} 个词的记忆` : r.error, r.ok ? "ok" : "warn");
   };
   const maxF = Math.max(1, ...stats.forecast);
@@ -189,6 +225,9 @@ export function Me({ privateAvailable }: { privateAvailable: boolean }) {
           <h3 className="eyebrow">数据</h3>
           <p className="muted">进度只存在这台设备的浏览器里：没有账号，没有服务器。换设备时，导出备份再导入即可。</p>
           {saveError && <p className="warn-text">浏览器拒绝保存（可能是隐私模式或空间已满）。请尽快导出备份。</p>}
+          <p className="muted" data-testid="last-backup">
+            {lastBackup ? `上次导出备份：${new Date(lastBackup).toLocaleString("zh-CN")}` : "你还没有导出过备份。清理浏览器或换手机之前，建议先导出一份。"}
+          </p>
           <div className="data-actions">
             <button className="btn btn-ghost" onClick={download}>
               <Download size={18} /> 导出备份

@@ -25,8 +25,9 @@
 </ul>
 <div id="wl-buy" {{#if proAvailable}}{{else}}hidden{{/if}}>
 <p class="testmode" id="wl-test" hidden>TEST MODE — no real charges. Use Paddle's test card.</p>
-<button class="buy" type="button" data-plan="monthly">Subscribe monthly · ${{proMonthly}}</button>
-<button class="buy" type="button" data-plan="yearly">Subscribe yearly · ${{proYearly}}</button>
+<p class="fine" lang="zh-CN">月付 ${{proMonthly}} 或年付 ${{proYearly}}；自动续费，随时取消；付款后获得许可证密钥，可在你的设备上解锁 Pro。</p>
+<button class="buy" type="button" data-plan="monthly">Subscribe monthly · 月付 ${{proMonthly}}</button>
+<button class="buy" type="button" data-plan="yearly">Subscribe yearly · 年付 ${{proYearly}}</button>
 <p class="fine">By subscribing you agree to the <a href="/terms.html">Terms of Service</a> and <a href="/refund.html">Refund Policy</a>. Our order process is conducted by our online reseller Paddle.com, the Merchant of Record. Subscriptions renew automatically until cancelled.</p>
 </div>
 {{#if proAvailable}}{{else}}<p id="wl-notice">Pro is not available for purchase yet. To be notified when it launches, email <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>.</p>{{/if}}

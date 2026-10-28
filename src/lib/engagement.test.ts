@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { BADGES, badgeContext, evaluate, longestStreak, nextGoal } from "./badges";
 import { deltaVsPrevious, essaySummary, sanitizeEssays } from "./essays";
 import { buildReminderIcs, normalizeTime } from "./reminder";
-import { emptyProgress } from "../store/store";
+import { emptyProgress, inspectBackup, store } from "../store/store";
+import { practiceCountLine, summaryLine } from "./copy";
 import type { CardState } from "../store/srs";
 
 const card = (over: Partial<CardState> = {}): CardState => ({ due: 0, s: 1, d: 5, el: 0, sd: 0, ls: 0, reps: 1, lapses: 0, st: 1, seen: 1, ...over });
@@ -82,4 +83,34 @@ test("the reminder is a valid daily calendar event", () => {
   assert.equal(normalizeTime("abc"), "20:00");
   assert.equal(normalizeTime("9:30"), "09:30");
   assert.ok(buildReminderIcs("20:00", 999).replace(/\r\n /g, "").includes("点亮 50 颗星"), "goal is clamped");
+});
+
+test("a star is lit only by a new word; reviews are called reviews", () => {
+  assert.equal(summaryLine(5, 5), "今天点亮了 5 颗星");
+  assert.equal(summaryLine(3, 8), "今天点亮了 3 颗星", "reviews in the same round do not inflate the count");
+  assert.equal(summaryLine(0, 1), "今天复习了 1 个词", "retrying one wrong word is a review, not a new star");
+});
+
+test("the practice count line is honest for 0, 1, 9, 10 and more than 10 words", () => {
+  assert.equal(practiceCountLine(0), "可练 0 个词；本轮 0 个。");
+  assert.equal(practiceCountLine(1), "可练 1 个词；本轮 1 个。");
+  assert.equal(practiceCountLine(9), "可练 9 个词；本轮 9 个。");
+  assert.equal(practiceCountLine(10), "可练 10 个词；本轮 10 个。");
+  assert.equal(practiceCountLine(11), "可练 11 个词；本轮 10 个（随机抽取，最多 10 个）。");
+});
+
+test("looking at a backup never changes the current progress, and bad files are explained", () => {
+  const id = store.get().progress.datasetId;
+  const before = JSON.stringify(store.get().progress);
+  const backup = { app: "word-atlas", version: 2, exported: "2026-10-01T08:00:00Z", progress: { ...emptyProgress(id), cards: { a: card(), b: card(), c: card() } }, settings: {} };
+  const ok = inspectBackup(JSON.stringify(backup));
+  assert.deepEqual(ok, { ok: true, cards: 3, exported: "2026-10-01T08:00:00Z" });
+  assert.equal(JSON.stringify(store.get().progress), before, "inspecting does not apply anything");
+
+  assert.deepEqual(inspectBackup("not json"), { ok: false, error: "文件不是有效的 JSON。" });
+  assert.equal(inspectBackup(JSON.stringify({ ...backup, version: 1 })).ok, false);
+  assert.equal(inspectBackup(JSON.stringify({ ...backup, app: "other" })).ok, false);
+  const other = inspectBackup(JSON.stringify({ ...backup, progress: { ...backup.progress, datasetId: "another-dataset" } }));
+  assert.deepEqual(other, { ok: false, error: "备份来自另一个词库，请先切换到对应词库。" });
+  assert.equal(JSON.stringify(store.get().progress), before);
 });
