@@ -147,6 +147,9 @@ export function Today() {
                 <Keyboard size={18} /> 打字练习
               </button>
             )}
+                      <a className="btn" href="#/write">
+              体验 AI 写作批改
+            </a>
           </div>
         </div>
       </section>

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { CRITERIA, FREE_DAILY, MAX_WORDS, MIN_WORDS, PRO_DAILY, countWords } from "../../functions/_lib/core";
 import { addEssay, deltaVsPrevious } from "../lib/essays";
 import { EssayTrend } from "../ui/EssayTrend";
+import { GradingWait } from "../ui/GradingWait";
 import type { CriterionKey, Grade } from "../../functions/_lib/core";
 import "../styles/write.css";
 
@@ -72,6 +73,16 @@ export function Write() {
   const [errCode, setErrCode] = useState<string | null>(null);
   const [txnInput, setTxnInput] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!busy) {
+      setElapsed(0);
+      return;
+    }
+    const t0 = Date.now();
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [busy]);
   const [licMsg, setLicMsg] = useState<string | null>(null);
   const isPro = !!(license && plan?.active);
 
@@ -392,8 +403,9 @@ export function Write() {
       )}
 
       <button className="btn btn-primary btn-xl" disabled={busy || !consent || !lengthOk} onClick={submit}>
-        {busy ? <Loader2 size={18} className="wr-spin" /> : <PenLine size={18} />} {busy ? "批改中，大约需要十几秒……" : "开始批改"}
+        {busy ? <Loader2 size={18} className="wr-spin" /> : <PenLine size={18} />} {busy ? `批改中…… 已 ${elapsed} 秒` : "开始批改"}
       </button>
+      {busy && <GradingWait elapsed={elapsed} />}
       <p className="muted wr-note">估算分仅供学习参考，不是官方雅思评分。请不要粘贴含有个人隐私的内容。</p>
     </div>
   );

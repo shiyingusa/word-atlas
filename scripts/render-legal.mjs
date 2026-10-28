@@ -5,6 +5,8 @@ import path from "node:path";
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const cfg = JSON.parse(fs.readFileSync(path.join(root, "site.config.json"), "utf8"));
 const layout = fs.readFileSync(path.join(root, "legal", "_layout.html"), "utf8");
+// What a year saves compared with twelve monthly payments, computed from the real prices.
+cfg.yearlySavePercent = Math.round((1 - Number(cfg.proYearly) / (Number(cfg.proMonthly) * 12)) * 100);
 
 const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 // {{#if key}}...{{else}}...{{/if}} — shown when cfg[key] is true or "true". Not nestable.

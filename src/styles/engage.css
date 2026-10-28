@@ -44,3 +44,35 @@
   .filters-row .segmented { display: flex; flex: 1 1 100%; min-width: 0; contain: inline-size; }
   .filters-row .segmented button { flex: 1 0 auto; padding: 0 10px; }
 }
+
+/* ---- writing: a calm waiting state ---- */
+.wr-wait { margin: 18px 0; }
+.wr-wait-tip { font-weight: 600; margin: 0 0 4px; }
+.wr-skel { display: grid; gap: 10px; margin-top: 14px; }
+.wr-skel-card { border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 8px; background: var(--card); }
+.wr-skel-card i { display: block; height: 10px; border-radius: 5px; background: var(--line); animation: wr-pulse 1.4s ease-in-out infinite; }
+.wr-skel-card i:nth-child(1) { width: 40%; height: 14px; }
+.wr-skel-card i:nth-child(2) { width: 90%; }
+.wr-skel-card i:nth-child(3) { width: 70%; }
+@keyframes wr-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .wr-skel-card i { animation: none; opacity: 0.7; } }
+
+/* ---- touch screens: every control gets at least a 44px target ---- */
+@media (pointer: coarse) {
+  .topbar-logo { display: inline-flex; align-items: center; min-height: 44px; }
+  .icon-btn, .search-pill { min-width: 44px; min-height: 44px; }
+  button.search-pill { width: 44px; min-width: 44px; height: 44px; }
+  .chip-btn { min-height: 44px; }
+  .segmented button { min-height: 44px; min-width: 44px; }
+  .wr-plan a { position: relative; }
+  .wr-plan a::after { content: ""; position: absolute; inset: -14px -6px; }
+  .wr-plan summary { display: flex; align-items: center; min-height: 44px; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not(.typing-input) { min-height: 44px; }
+  button.link, .speak { position: relative; }
+  button.link::after { content: ""; position: absolute; inset: -11px -6px; }
+  .speak::after { content: ""; position: absolute; inset: -8px; }
+}
+
+/* Home hero: the second way in looks like a button, clearly secondary to the main one. */
+.journey-actions a.btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; margin-top: 10px; border: 1px solid rgba(255, 255, 255, 0.38); border-radius: 999px; background: rgba(255, 255, 255, 0.07); color: inherit; font-weight: 600; text-decoration: none; }
+.journey-actions a.btn:hover { background: rgba(255, 255, 255, 0.14); }
